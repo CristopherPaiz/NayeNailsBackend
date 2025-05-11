@@ -1,3 +1,7 @@
+import dotenv from 'dotenv'
+dotenv.config()
+const jwtSecretKey = process.env.JWT_SECRET_KEY
+
 // Middleware para verificar la autenticación
 export const authMiddleware = (req, res, next) => {
   const token = req.cookies.token
