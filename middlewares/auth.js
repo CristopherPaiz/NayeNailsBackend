@@ -1,5 +1,5 @@
-import dotenv from 'dotenv'
-dotenv.config()
+import jwt from 'jsonwebtoken'
+
 const jwtSecretKey = process.env.JWT_SECRET_KEY
 
 // Middleware para verificar la autenticación

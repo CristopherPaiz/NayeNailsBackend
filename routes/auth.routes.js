@@ -1,5 +1,10 @@
 import express from 'express'
-import { login, register, logout } from '../controllers/auth.controller.js'
+import {
+  login,
+  register,
+  logout,
+  getMe
+} from '../controllers/auth.controller.js'
 import { authMiddleware } from '../middlewares/auth.js'
 
 const authRoutes = express.Router()
@@ -12,8 +17,6 @@ authRoutes.post('/login', login)
 authRoutes.post('/logout', logout)
 
 // Ruta protegida de ejemplo
-authRoutes.get('/me', authMiddleware, (req, res) => {
-  res.json({ user: req.user })
-})
+authRoutes.get('/me', authMiddleware, getMe)
 
 export default authRoutes

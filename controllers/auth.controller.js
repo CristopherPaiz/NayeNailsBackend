@@ -1,8 +1,6 @@
 import { turso } from '../database/connection.js'
 import jwt from 'jsonwebtoken'
-import dotenv from 'dotenv'
 import bcrypt from 'bcrypt'
-dotenv.config()
 
 const saltRounds = parseInt(process.env.SALT_ROUNDS) || 10
 const jwtSecretKey = process.env.JWT_SECRET_KEY
@@ -64,6 +62,7 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   const { username, password } = req.body
 
+  console.log('llego aquí')
   // Validar la entrada
   if (!username || !password) {
     return res
@@ -172,4 +171,18 @@ export const logout = async (req, res) => {
     console.error('Error en cierre de sesión:', error)
     return res.status(500).json({ message: 'Error interno del servidor' })
   }
+}
+
+export const getMe = async (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Usuario no autenticado.' })
+  }
+
+  return res.status(200).json({
+    message: 'Usuario autenticado exitosamente.',
+    user: {
+      id: req.user.userId, // Asegúrate que estos campos coincidan con los nombres
+      username: req.user.username // que pusiste en el payload del token al crearlo.
+    }
+  })
 }

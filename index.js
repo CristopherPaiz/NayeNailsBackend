@@ -2,12 +2,19 @@ import express from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import authRoutes from './routes/auth.routes.js'
+import dotenv from 'dotenv'
+dotenv.config()
 
 const app = express()
 const port = process.env.PORT || 3000
 
 // Usar CORS
-app.use(cors())
+app.use(
+  cors({
+    origin: 'http://localhost:5173', // El origen de tu frontend
+    credentials: true // Permitir que el navegador envíe cookies
+  })
+)
 
 // Middleware para parsear JSON
 app.use(express.json())
