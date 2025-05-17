@@ -140,7 +140,9 @@ export const login = async (req, res) => {
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      expires: new Date(Date.now() + expiresInMs)
+      expires: new Date(Date.now() + expiresInMs),
+      sameSite: 'none',
+      domain: process.env.NODE_ENV === 'production' ? undefined : 'localhost'
     })
 
     const expirationDate = new Date(Date.now() + expiresInMs)
