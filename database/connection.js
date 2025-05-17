@@ -2,18 +2,31 @@ import { createClient } from '@libsql/client'
 import dotenv from 'dotenv'
 dotenv.config()
 
-let turso
+// Variable para almacenar el cliente
+let turso = null
+let isConnected = false
 let retryCount = 0
 const maxRetries = 5
 
-const connectWithRetry = () => {
+// Función para conectar a la base de datos
+const connectWithRetry = async () => {
   try {
-    turso = createClient({
+    // Crear el cliente
+    const client = createClient({
       url: process.env.TURSO_DATABASE_URL,
       authToken: process.env.TURSO_AUTH_TOKEN
     })
+
+    // Probar la conexión
+    await client.execute({ sql: 'SELECT 1' })
+
+    // Si llega aquí, la conexión fue exitosa
+    turso = client
+    isConnected = true
     console.log('Base de datos Turso conectada con éxito')
-    retryCount = 0 // Reiniciar el contador si la conexión es exitosa
+    retryCount = 0
+
+    return client
   } catch (err) {
     retryCount++
     console.error(
@@ -25,16 +38,32 @@ const connectWithRetry = () => {
       console.log(
         `Reintentando conexión en 5 segundos... (Intento ${retryCount} de ${maxRetries})`
       )
-      setTimeout(connectWithRetry, 5000)
+      // Reintento usando promesa para evitar múltiples conexiones simultáneas
+      return new Promise((resolve) => {
+        setTimeout(() => resolve(connectWithRetry()), 5000)
+      })
     } else {
       console.error(
         'Se alcanzó el número máximo de intentos de conexión. No se realizarán más reintentos.'
       )
+      // Retornar null para indicar que no se pudo conectar
+      return null
     }
   }
 }
 
-// Intentar conectar al iniciar la aplicación
-connectWithRetry()
+// Iniciar la conexión
+const dbPromise = connectWithRetry()
 
+// Exportar una función para obtener la conexión segura
+export async function getDb() {
+  if (isConnected && turso) {
+    return turso
+  }
+
+  // Esperar a que se resuelva la conexión
+  return await dbPromise
+}
+
+// Para compatibilidad con tu código actual
 export { turso }
