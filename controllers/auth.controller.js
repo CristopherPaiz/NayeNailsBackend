@@ -1,4 +1,4 @@
-import { turso } from '../database/connection.js'
+import { getDb } from '../database/connection.js'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcrypt'
 
@@ -8,9 +8,8 @@ const jwtExpirationTime = process.env.JWT_EXPIRATION_TIME || '7d'
 
 export const register = async (req, res) => {
   const { username, password, nombre, apellido } = req.body
-  console.log('si llega')
+  console.log('Intento de registro para:', username)
 
-  // Validar la entrada
   if (!username || !password) {
     return res
       .status(400)
@@ -18,8 +17,14 @@ export const register = async (req, res) => {
   }
 
   try {
-    // Verificar si el usuario ya existe
-    const { rows: existingUsers } = await turso.execute({
+    const db = await getDb()
+    if (!db) {
+      return res.status(503).json({
+        message: 'Base de datos no disponible temporalmente. Intente más tarde.'
+      })
+    }
+
+    const { rows: existingUsers } = await db.execute({
       sql: 'SELECT * FROM Usuarios WHERE username = ?',
       args: [username]
     })
@@ -28,18 +33,13 @@ export const register = async (req, res) => {
       return res.status(409).json({ message: 'Usuario ya existe' })
     }
 
-    // Hash the password
     const hashedPassword = await bcrypt.hash(password, saltRounds)
 
-    // Crear el nuevo usuario con campos opcionales
-    const result = await turso.execute({
+    const result = await db.execute({
       sql: 'INSERT INTO Usuarios (username, password, nombre, apellido) VALUES (?, ?, ?, ?)',
       args: [username, hashedPassword, nombre || null, apellido || null]
     })
 
-    console.log('result', result)
-
-    // Convierte el BigInt a Number o String antes de enviarlo en la respuesta JSON
     const userId = result?.lastInsertRowid
       ? Number(result.lastInsertRowid)
       : null
@@ -62,7 +62,6 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   const { username, password } = req.body
 
-  // Validar la entrada
   if (!username || !password) {
     return res
       .status(400)
@@ -70,8 +69,14 @@ export const login = async (req, res) => {
   }
 
   try {
-    // Buscar el usuario
-    const { rows: users } = await turso.execute({
+    const db = await getDb()
+    if (!db) {
+      return res.status(503).json({
+        message: 'Base de datos no disponible temporalmente. Intente más tarde.'
+      })
+    }
+
+    const { rows: users } = await db.execute({
       sql: 'SELECT * FROM Usuarios WHERE username = ?',
       args: [username]
     })
@@ -82,43 +87,65 @@ export const login = async (req, res) => {
 
     const user = users[0]
 
-    // Verificar la contraseña
     const passwordMatch = await bcrypt.compare(password, user.password)
     if (!passwordMatch) {
       return res.status(401).json({ message: 'Credenciales inválidas' })
     }
 
-    // Actualizar último login
-    await turso.execute({
+    await db.execute({
       sql: 'UPDATE Usuarios SET ultimo_login = CURRENT_TIMESTAMP WHERE id = ?',
       args: [user.id]
     })
 
-    // Generar token JWT
     const token = jwt.sign(
       { userId: user.id, username: user.username },
       jwtSecretKey,
       { expiresIn: jwtExpirationTime }
     )
 
-    // Calcular tiempo de expiración para la cookie
-    const expiresInMs = jwtExpirationTime.includes('h')
-      ? parseInt(jwtExpirationTime) * 60 * 60 * 1000
-      : jwtExpirationTime.includes('d')
-      ? parseInt(jwtExpirationTime) * 24 * 60 * 60 * 1000
-      : jwtExpirationTime.includes('w')
-      ? parseInt(jwtExpirationTime) * 7 * 24 * 60 * 60 * 1000
-      : 24 * 60 * 60 * 1000 // default 24 horas
+    let expiresInMs
+    const unit = jwtExpirationTime.slice(-1).toLowerCase()
+    const value = parseInt(jwtExpirationTime.slice(0, -1))
 
-    // Configurar la cookie con el token JWT
+    if (isNaN(value)) {
+      expiresInMs = 24 * 60 * 60 * 1000
+      console.warn(
+        `Formato de JWT_EXPIRATION_TIME inválido ('${jwtExpirationTime}'), usando 24h por defecto para la cookie.`
+      )
+    } else {
+      switch (unit) {
+        case 's':
+          expiresInMs = value * 1000
+          break
+        case 'm':
+          expiresInMs = value * 60 * 1000
+          break
+        case 'h':
+          expiresInMs = value * 60 * 60 * 1000
+          break
+        case 'd':
+          expiresInMs = value * 24 * 60 * 60 * 1000
+          break
+        case 'w':
+          expiresInMs = value * 7 * 24 * 60 * 60 * 1000
+          break
+        default:
+          expiresInMs = 24 * 60 * 60 * 1000
+          console.warn(
+            `Unidad de JWT_EXPIRATION_TIME desconocida ('${unit}'), usando 24h por defecto para la cookie.`
+          )
+      }
+    }
+
     res.cookie('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production' // Solo HTTPS en producción
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      expires: new Date(Date.now() + expiresInMs)
     })
 
-    // Opcional: Registrar la sesión en la base de datos
     const expirationDate = new Date(Date.now() + expiresInMs)
-    await turso.execute({
+    await db.execute({
       sql: 'INSERT INTO Sesiones (usuario_id, token, fecha_expiracion) VALUES (?, ?, ?)',
       args: [user.id, token, expirationDate.toISOString()]
     })
@@ -149,13 +176,22 @@ export const logout = async (req, res) => {
       })
     }
 
-    // Invalidar el token en la base de datos
-    await turso.execute({
-      sql: 'UPDATE Sesiones SET activa = 0 WHERE token = ?',
-      args: [token]
-    })
+    const db = await getDb()
+    if (!db) {
+      console.warn(
+        'Base de datos no disponible durante el logout. Procediendo a borrar solo la cookie.'
+      )
+    } else {
+      try {
+        await db.execute({
+          sql: 'UPDATE Sesiones SET activa = 0 WHERE token = ?',
+          args: [token]
+        })
+      } catch (dbError) {
+        console.error('Error al invalidar token en BD durante logout:', dbError)
+      }
+    }
 
-    // Eliminar la cookie del token
     res.clearCookie('token', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -180,8 +216,8 @@ export const getMe = async (req, res) => {
   return res.status(200).json({
     message: 'Usuario autenticado exitosamente.',
     user: {
-      id: req.user.userId, // Asegúrate que estos campos coincidan con los nombres
-      username: req.user.username // que pusiste en el payload del token al crearlo.
+      id: req.user.userId,
+      username: req.user.username
     }
   })
 }
