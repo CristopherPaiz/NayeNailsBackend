@@ -139,10 +139,10 @@ export const login = async (req, res) => {
 
     res.cookie('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true, // Siempre true en producción y cuando usas sameSite: 'none'
+      sameSite: 'none', // Crucial para permitir cookies cross-origin
       expires: new Date(Date.now() + expiresInMs),
-      sameSite: 'none',
-      domain: process.env.NODE_ENV === 'production' ? undefined : 'localhost'
+      path: '/' // Asegura que la cookie esté disponible en todo el sitio
     })
 
     const expirationDate = new Date(Date.now() + expiresInMs)
@@ -193,10 +193,13 @@ export const logout = async (req, res) => {
       }
     }
 
-    res.clearCookie('token', {
+    // Limpiar la cookie con los mismos parámetros usados al crearla
+    res.cookie('token', '', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict'
+      secure: true,
+      sameSite: 'none',
+      expires: new Date(0), // Fecha en el pasado para eliminar la cookie
+      path: '/'
     })
 
     return res.status(200).json({

@@ -27,13 +27,11 @@ if (missingVars.length > 0) {
 // Usar CORS
 app.use(
   cors({
-    origin: [
-      'http://localhost:5173',
-      'https://nayenails.netlify.app',
-      'https://nayenails.netlify.app/*',
-      '*.netlify.app'
-    ],
-    credentials: true
+    // Especificar exactamente los dominios permitidos (sin comodines)
+    origin: ['http://localhost:5173', 'https://nayenails.netlify.app'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
   })
 )
 
