@@ -140,7 +140,6 @@ export const login = async (req, res) => {
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
       expires: new Date(Date.now() + expiresInMs)
     })
 
