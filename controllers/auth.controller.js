@@ -2,9 +2,9 @@ import { getDb } from '../database/connection.js'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcrypt'
 
-const saltRounds = parseInt(process.env.SALT_ROUNDS) || 10
+const saltRounds = parseInt(process.env.SALT_ROUNDS) ?? 10
 const jwtSecretKey = process.env.JWT_SECRET_KEY
-const jwtExpirationTime = process.env.JWT_EXPIRATION_TIME || '7d'
+const jwtExpirationTime = process.env.JWT_EXPIRATION_TIME ?? '7d'
 
 export const register = async (req, res) => {
   const { username, password, nombre, apellido } = req.body
@@ -37,7 +37,7 @@ export const register = async (req, res) => {
 
     const result = await db.execute({
       sql: 'INSERT INTO Usuarios (username, password, nombre, apellido) VALUES (?, ?, ?, ?)',
-      args: [username, hashedPassword, nombre || null, apellido || null]
+      args: [username, hashedPassword, nombre ?? null, apellido ?? null]
     })
 
     const userId = result?.lastInsertRowid
@@ -49,8 +49,8 @@ export const register = async (req, res) => {
       user: {
         id: userId,
         username,
-        nombre: nombre || null,
-        apellido: apellido || null
+        nombre: nombre ?? null,
+        apellido: apellido ?? null
       }
     })
   } catch (error) {
@@ -77,12 +77,14 @@ export const login = async (req, res) => {
     }
 
     const { rows: users } = await db.execute({
-      sql: 'SELECT * FROM Usuarios WHERE username = ?',
+      sql: 'SELECT * FROM Usuarios WHERE username = ? AND activo = 1', // Asegurar que el usuario esté activo
       args: [username]
     })
 
     if (users.length === 0) {
-      return res.status(401).json({ message: 'Credenciales inválidas' })
+      return res
+        .status(401)
+        .json({ message: 'Credenciales inválidas o usuario inactivo' })
     }
 
     const user = users[0]
@@ -93,7 +95,7 @@ export const login = async (req, res) => {
     }
 
     await db.execute({
-      sql: 'UPDATE Usuarios SET ultimo_login = CURRENT_TIMESTAMP WHERE id = ?',
+      sql: "UPDATE Usuarios SET ultimo_login = STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW') WHERE id = ?",
       args: [user.id]
     })
 
@@ -108,7 +110,7 @@ export const login = async (req, res) => {
     const value = parseInt(jwtExpirationTime.slice(0, -1))
 
     if (isNaN(value)) {
-      expiresInMs = 24 * 60 * 60 * 1000
+      expiresInMs = 24 * 60 * 60 * 1000 // 24 horas por defecto
       console.warn(
         `Formato de JWT_EXPIRATION_TIME inválido ('${jwtExpirationTime}'), usando 24h por defecto para la cookie.`
       )
@@ -130,7 +132,7 @@ export const login = async (req, res) => {
           expiresInMs = value * 7 * 24 * 60 * 60 * 1000
           break
         default:
-          expiresInMs = 24 * 60 * 60 * 1000
+          expiresInMs = 24 * 60 * 60 * 1000 // 24 horas por defecto
           console.warn(
             `Unidad de JWT_EXPIRATION_TIME desconocida ('${unit}'), usando 24h por defecto para la cookie.`
           )
@@ -139,10 +141,10 @@ export const login = async (req, res) => {
 
     res.cookie('token', token, {
       httpOnly: true,
-      secure: true, // Siempre true en producción y cuando usas sameSite: 'none'
-      sameSite: 'none', // Crucial para permitir cookies cross-origin
+      secure: process.env.NODE_ENV === 'production', // true en producción
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' para cross-site, 'lax' para desarrollo
       expires: new Date(Date.now() + expiresInMs),
-      path: '/' // Asegura que la cookie esté disponible en todo el sitio
+      path: '/'
     })
 
     const expirationDate = new Date(Date.now() + expiresInMs)
@@ -170,35 +172,30 @@ export const logout = async (req, res) => {
   try {
     const token = req.cookies.token
 
-    if (!token) {
-      return res.status(400).json({
-        message: 'No hay sesión activa',
-        authenticated: false
-      })
-    }
-
-    const db = await getDb()
-    if (!db) {
-      console.warn(
-        'Base de datos no disponible durante el logout. Procediendo a borrar solo la cookie.'
-      )
-    } else {
-      try {
-        await db.execute({
-          sql: 'UPDATE Sesiones SET activa = 0 WHERE token = ?',
-          args: [token]
-        })
-      } catch (dbError) {
-        console.error('Error al invalidar token en BD durante logout:', dbError)
+    if (token) {
+      const db = await getDb()
+      if (db) {
+        try {
+          await db.execute({
+            sql: 'UPDATE Sesiones SET activa = 0 WHERE token = ?',
+            args: [token]
+          })
+        } catch (dbError) {
+          console.error(
+            'Error al invalidar token en BD durante logout:',
+            dbError
+          )
+        }
+      } else {
+        console.warn('Base de datos no disponible durante el logout.')
       }
     }
 
-    // Limpiar la cookie con los mismos parámetros usados al crearla
     res.cookie('token', '', {
       httpOnly: true,
-      secure: true,
-      sameSite: 'none',
-      expires: new Date(0), // Fecha en el pasado para eliminar la cookie
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      expires: new Date(0),
       path: '/'
     })
 
@@ -213,15 +210,47 @@ export const logout = async (req, res) => {
 }
 
 export const getMe = async (req, res) => {
-  if (!req.user) {
+  if (!req.user?.userId) {
     return res.status(401).json({ message: 'Usuario no autenticado.' })
   }
 
-  return res.status(200).json({
-    message: 'Usuario autenticado exitosamente.',
-    user: {
-      id: req.user.userId,
-      username: req.user.username
+  try {
+    const db = await getDb()
+    if (!db) {
+      return res.status(503).json({ message: 'Base de datos no disponible.' })
     }
-  })
+
+    const { rows: users } = await db.execute({
+      sql: 'SELECT id, username, nombre, apellido, activo FROM Usuarios WHERE id = ?',
+      args: [req.user.userId]
+    })
+
+    if (users.length === 0) {
+      return res.status(404).json({ message: 'Usuario no encontrado.' })
+    }
+
+    const user = users[0]
+
+    if (!user.activo) {
+      res.clearCookie('token') // Limpiar cookie si el usuario está inactivo
+      return res
+        .status(403)
+        .json({ message: 'La cuenta de usuario está inactiva.' })
+    }
+
+    return res.status(200).json({
+      message: 'Usuario autenticado exitosamente.',
+      user: {
+        id: user.id,
+        username: user.username,
+        nombre: user.nombre,
+        apellido: user.apellido
+      }
+    })
+  } catch (error) {
+    console.error('Error en getMe:', error)
+    return res.status(500).json({
+      message: 'Error interno del servidor al obtener datos del usuario.'
+    })
+  }
 }
