@@ -55,11 +55,9 @@ export const createCategoriaPadre = async (req, res) => {
       ? Number(result.lastInsertRowid)
       : null
     if (!nuevaCategoriaId) {
-      return res
-        .status(500)
-        .json({
-          message: 'Error al crear la categoría padre, no se obtuvo ID.'
-        })
+      return res.status(500).json({
+        message: 'Error al crear la categoría padre, no se obtuvo ID.'
+      })
     }
 
     const {
@@ -69,12 +67,10 @@ export const createCategoriaPadre = async (req, res) => {
       args: [nuevaCategoriaId]
     })
 
-    return res
-      .status(201)
-      .json({
-        message: 'Categoría padre creada exitosamente',
-        categoria: { ...nuevaCategoria, subcategorias: [] }
-      })
+    return res.status(201).json({
+      message: 'Categoría padre creada exitosamente',
+      categoria: { ...nuevaCategoria, subcategorias: [] }
+    })
   } catch (error) {
     console.error('Error al crear categoría padre:', error)
     if (error.message?.includes('UNIQUE constraint failed')) {
@@ -120,12 +116,10 @@ export const updateCategoriaPadre = async (req, res) => {
       args: [id]
     })
 
-    return res
-      .status(200)
-      .json({
-        message: 'Categoría padre actualizada exitosamente',
-        categoria: categoriaActualizada
-      })
+    return res.status(200).json({
+      message: 'Categoría padre actualizada exitosamente',
+      categoria: categoriaActualizada
+    })
   } catch (error) {
     console.error('Error al actualizar categoría padre:', error)
     if (error.message?.includes('UNIQUE constraint failed')) {
@@ -133,16 +127,15 @@ export const updateCategoriaPadre = async (req, res) => {
         .status(409)
         .json({ message: 'Ya existe otra categoría padre con ese nombre.' })
     }
-    return res
-      .status(500)
-      .json({
-        message: 'Error interno del servidor al actualizar categoría padre'
-      })
+    return res.status(500).json({
+      message: 'Error interno del servidor al actualizar categoría padre'
+    })
   }
 }
 
 export const toggleActivoCategoriaPadre = async (req, res) => {
   const { id } = req.params
+  console.log(`Toggling activo for CategoriaPadre with ID: ${id}`)
   try {
     const db = await getDb()
     if (!db) {
@@ -156,9 +149,13 @@ export const toggleActivoCategoriaPadre = async (req, res) => {
       args: [id]
     })
 
+    console.log(`CategoriaPadre encontrado: ${JSON.stringify(categoria)}`)
+
     if (!categoria) {
       return res.status(404).json({ message: 'Categoría padre no encontrada' })
     }
+
+    console.log(`Estado actual de activo: ${categoria.activo}`)
 
     const nuevoEstado = categoria.activo ? 0 : 1
     await db.execute({
@@ -166,14 +163,12 @@ export const toggleActivoCategoriaPadre = async (req, res) => {
       args: [nuevoEstado, id]
     })
 
-    return res
-      .status(200)
-      .json({
-        message: `Categoría padre ${
-          nuevoEstado ? 'activada' : 'inactivada'
-        } exitosamente`,
-        activo: nuevoEstado
-      })
+    return res.status(200).json({
+      message: `Categoría padre ${
+        nuevoEstado ? 'activada' : 'inactivada'
+      } exitosamente`,
+      activo: nuevoEstado
+    })
   } catch (error) {
     console.error('Error al cambiar estado de categoría padre:', error)
     return res
@@ -232,21 +227,17 @@ export const createSubcategoria = async (req, res) => {
       args: [nuevaSubcategoriaId]
     })
 
-    return res
-      .status(201)
-      .json({
-        message: 'Subcategoría creada exitosamente',
-        subcategoria: nuevaSubcategoria
-      })
+    return res.status(201).json({
+      message: 'Subcategoría creada exitosamente',
+      subcategoria: nuevaSubcategoria
+    })
   } catch (error) {
     console.error('Error al crear subcategoría:', error)
     if (error.message?.includes('UNIQUE constraint failed')) {
-      return res
-        .status(409)
-        .json({
-          message:
-            'Ya existe una subcategoría con ese nombre para esta categoría padre.'
-        })
+      return res.status(409).json({
+        message:
+          'Ya existe una subcategoría con ese nombre para esta categoría padre.'
+      })
     }
     return res
       .status(500)
@@ -321,27 +312,21 @@ export const updateSubcategoria = async (req, res) => {
       args: [id]
     })
 
-    return res
-      .status(200)
-      .json({
-        message: 'Subcategoría actualizada exitosamente',
-        subcategoria: subcategoriaActualizada
-      })
+    return res.status(200).json({
+      message: 'Subcategoría actualizada exitosamente',
+      subcategoria: subcategoriaActualizada
+    })
   } catch (error) {
     console.error('Error al actualizar subcategoría:', error)
     if (error.message?.includes('UNIQUE constraint failed')) {
-      return res
-        .status(409)
-        .json({
-          message:
-            'Ya existe una subcategoría con ese nombre para la categoría padre seleccionada.'
-        })
-    }
-    return res
-      .status(500)
-      .json({
-        message: 'Error interno del servidor al actualizar subcategoría'
+      return res.status(409).json({
+        message:
+          'Ya existe una subcategoría con ese nombre para la categoría padre seleccionada.'
       })
+    }
+    return res.status(500).json({
+      message: 'Error interno del servidor al actualizar subcategoría'
+    })
   }
 }
 
@@ -370,14 +355,12 @@ export const toggleActivoSubcategoria = async (req, res) => {
       args: [nuevoEstado, id]
     })
 
-    return res
-      .status(200)
-      .json({
-        message: `Subcategoría ${
-          nuevoEstado ? 'activada' : 'inactivada'
-        } exitosamente`,
-        activo: nuevoEstado
-      })
+    return res.status(200).json({
+      message: `Subcategoría ${
+        nuevoEstado ? 'activada' : 'inactivada'
+      } exitosamente`,
+      activo: nuevoEstado
+    })
   } catch (error) {
     console.error('Error al cambiar estado de subcategoría:', error)
     return res

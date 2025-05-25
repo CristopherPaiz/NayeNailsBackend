@@ -1,5 +1,5 @@
 import { getDb } from '../database/connection.js'
-import { toSlug } from '../utils/textUtils.js' // Necesitarás este util en el backend
+import { toSlug } from '../utils/textUtils.js'
 
 export const getAllDisenios = async (req, res) => {
   try {
@@ -7,7 +7,6 @@ export const getAllDisenios = async (req, res) => {
     if (!db)
       return res.status(503).json({ message: 'Base de datos no disponible.' })
 
-    // Obtener todos los diseños activos
     const { rows: disenios } = await db.execute({
       sql: `
         SELECT
@@ -18,7 +17,6 @@ export const getAllDisenios = async (req, res) => {
       `
     })
 
-    // Para cada diseño, obtener sus subcategorías y agruparlas por categoría padre
     const diseniosConCategorias = await Promise.all(
       disenios.map(async (disenio) => {
         const { rows: subcategoriasAsociadas } = await db.execute({
@@ -38,7 +36,6 @@ export const getAllDisenios = async (req, res) => {
           args: [disenio.id]
         })
 
-        // Agrupar subcategorías por el slug de la categoría padre para el frontend
         const categoriasParaFrontend = {}
         subcategoriasAsociadas.forEach((sub) => {
           const categoriaPadreSlug = toSlug(sub.categoriapadre_nombre)
@@ -70,7 +67,6 @@ export const getAllDiseniosAdmin = async (req, res) => {
       sql: 'SELECT * FROM Disenios ORDER BY fecha_creacion DESC'
     })
 
-    // Opcional: Enriquecer con subcategorías si es necesario para la vista de admin
     const diseniosEnriquecidos = await Promise.all(
       disenios.map(async (disenio) => {
         const { rows: subcategorias } = await db.execute({
@@ -100,7 +96,7 @@ export const createDisenio = async (req, res) => {
     oferta,
     duracion,
     subcategorias
-  } = req.body
+  } = req.body.data
 
   if (!nombre || !imagen_url) {
     return res
@@ -112,7 +108,6 @@ export const createDisenio = async (req, res) => {
       .status(400)
       .json({ message: 'Debe seleccionar al menos una subcategoría.' })
   }
-  // Validar que todos los elementos en subcategorias sean números (IDs)
   if (!subcategorias.every((id) => Number.isInteger(id) && id > 0)) {
     return res
       .status(400)
@@ -123,8 +118,6 @@ export const createDisenio = async (req, res) => {
     const db = await getDb()
     if (!db)
       return res.status(503).json({ message: 'Base de datos no disponible.' })
-
-    await db.execute('BEGIN TRANSACTION')
 
     const resultDisenio = await db.execute({
       sql: 'INSERT INTO Disenios (nombre, descripcion, imagen_url, precio, oferta, duracion) VALUES (?, ?, ?, ?, ?, ?)',
@@ -142,23 +135,18 @@ export const createDisenio = async (req, res) => {
       ? Number(resultDisenio.lastInsertRowid)
       : null
     if (!disenioId) {
-      await db.execute('ROLLBACK')
       return res
         .status(500)
         .json({ message: 'Error al crear el diseño, no se obtuvo ID.' })
     }
 
     for (const subcategoriaId of subcategorias) {
-      // Opcional: Verificar si la subcategoría existe y está activa antes de insertar
       await db.execute({
         sql: 'INSERT INTO DisenioSubcategorias (id_disenio, id_subcategoria) VALUES (?, ?)',
         args: [disenioId, subcategoriaId]
       })
     }
 
-    await db.execute('COMMIT')
-
-    // Devolver el diseño creado con sus subcategorías (opcional, pero útil)
     const {
       rows: [nuevoDisenio]
     } = await db.execute({
@@ -179,9 +167,6 @@ export const createDisenio = async (req, res) => {
     })
   } catch (error) {
     console.error('Error al crear diseño:', error)
-    await getDb()
-      .then((db) => db?.execute('ROLLBACK'))
-      .catch((e) => console.error('Error en rollback', e))
     if (error.message?.includes('UNIQUE constraint failed')) {
       return res
         .status(409)
@@ -224,8 +209,7 @@ export const updateDisenio = async (req, res) => {
     if (!db)
       return res.status(503).json({ message: 'Base de datos no disponible.' })
 
-    await db.execute('BEGIN TRANSACTION')
-
+    // Inicio de lógica sin transacción explícita para Turso
     const { rowsAffected } = await db.execute({
       sql: 'UPDATE Disenios SET nombre = ?, descripcion = ?, imagen_url = ?, precio = ?, oferta = ?, duracion = ? WHERE id = ?',
       args: [
@@ -240,11 +224,9 @@ export const updateDisenio = async (req, res) => {
     })
 
     if (rowsAffected === 0) {
-      await db.execute('ROLLBACK')
       return res.status(404).json({ message: 'Diseño no encontrado.' })
     }
 
-    // Actualizar asociaciones de subcategorías: borrar existentes y añadir las nuevas
     await db.execute({
       sql: 'DELETE FROM DisenioSubcategorias WHERE id_disenio = ?',
       args: [id]
@@ -256,8 +238,7 @@ export const updateDisenio = async (req, res) => {
         args: [id, subcategoriaId]
       })
     }
-
-    await db.execute('COMMIT')
+    // Fin de lógica sin transacción explícita
 
     const {
       rows: [disenioActualizado]
@@ -279,9 +260,7 @@ export const updateDisenio = async (req, res) => {
     })
   } catch (error) {
     console.error('Error al actualizar diseño:', error)
-    await getDb()
-      .then((db) => db?.execute('ROLLBACK'))
-      .catch((e) => console.error('Error en rollback', e))
+    // No hay ROLLBACK explícito ya que no usamos BEGIN TRANSACTION
     if (error.message?.includes('UNIQUE constraint failed')) {
       return res
         .status(409)
@@ -324,5 +303,43 @@ export const toggleActivoDisenio = async (req, res) => {
   } catch (error) {
     console.error('Error al cambiar estado del diseño:', error)
     return res.status(500).json({ message: 'Error interno del servidor.' })
+  }
+}
+
+export const deleteDisenio = async (req, res) => {
+  const { id } = req.params
+  try {
+    const db = await getDb()
+    if (!db) {
+      return res.status(503).json({ message: 'Base de datos no disponible.' })
+    }
+
+    // Eliminar asociaciones de subcategorías primero
+    await db.execute({
+      sql: 'DELETE FROM DisenioSubcategorias WHERE id_disenio = ?',
+      args: [id]
+    })
+
+    // Luego eliminar el diseño principal
+    const { rowsAffected } = await db.execute({
+      sql: 'DELETE FROM Disenios WHERE id = ?',
+      args: [id]
+    })
+
+    if (rowsAffected === 0) {
+      // Esto podría suceder si el diseño ya fue eliminado o el ID es incorrecto,
+      // pero las subcategorías asociadas (si existían) ya se habrían intentado borrar.
+      return res.status(404).json({
+        message: 'Diseño no encontrado para eliminar o ya había sido eliminado.'
+      })
+    }
+
+    return res.status(200).json({ message: 'Diseño eliminado exitosamente.' })
+  } catch (error) {
+    console.error('Error al eliminar diseño:', error)
+    // No hay ROLLBACK explícito necesario aquí sin BEGIN TRANSACTION
+    return res
+      .status(500)
+      .json({ message: 'Error interno del servidor al eliminar el diseño.' })
   }
 }

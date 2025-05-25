@@ -4,7 +4,8 @@ import {
   getAllDiseniosAdmin,
   createDisenio,
   updateDisenio,
-  toggleActivoDisenio
+  toggleActivoDisenio,
+  deleteDisenio // Asegúrate de importar deleteDisenio
 } from '../controllers/disenios.controller.js'
 import { authMiddleware } from '../middlewares/auth.js'
 
@@ -18,5 +19,6 @@ diseniosRoutes.get('/admin', authMiddleware, getAllDiseniosAdmin) // Para la tab
 diseniosRoutes.post('/', authMiddleware, createDisenio)
 diseniosRoutes.put('/:id', authMiddleware, updateDisenio)
 diseniosRoutes.patch('/:id/toggle-activo', authMiddleware, toggleActivoDisenio)
+diseniosRoutes.delete('/:id', authMiddleware, deleteDisenio) // Nueva ruta para eliminar
 
 export default diseniosRoutes

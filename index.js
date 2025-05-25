@@ -3,9 +3,11 @@ import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import authRoutes from './routes/auth.routes.js'
 import categoriasRoutes from './routes/categorias.routes.js'
-import diseniosRoutes from './routes/disenios.routes.js' // NUEVA importación
-import usuariosRoutes from './routes/usuarios.routes.js' // NUEVA importación
-import configuracionesRoutes from './routes/configuraciones.routes.js' // NUEVA importación
+import diseniosRoutes from './routes/disenios.routes.js'
+import usuariosRoutes from './routes/usuarios.routes.js'
+import configuracionesRoutes from './routes/configuraciones.routes.js'
+import visitasRoutes from './routes/visitas.routes.js' // NUEVA RUTA
+import dashboardRoutes from './routes/dashboard.routes.js' // NUEVA RUTA
 // adminRoutes no se usa directamente si las funcionalidades de admin están en sus propios módulos (usuarios, disenios, etc.)
 // import adminRoutes from './routes/admin.routes.js';
 import dotenv from 'dotenv'
@@ -81,9 +83,11 @@ app.use(async (req, res, next) => {
 
 app.use('/api/auth', authRoutes)
 app.use('/api/categorias', categoriasRoutes)
-app.use('/api/disenios', diseniosRoutes) // NUEVA ruta
-app.use('/api/usuarios', usuariosRoutes) // NUEVA ruta
-app.use('/api/configuraciones-sitio', configuracionesRoutes) // NUEVA ruta
+app.use('/api/disenios', diseniosRoutes)
+app.use('/api/usuarios', usuariosRoutes)
+app.use('/api/configuraciones-sitio', configuracionesRoutes)
+app.use('/api/visitas', visitasRoutes) // NUEVA RUTA
+app.use('/api/dashboard', dashboardRoutes) // NUEVA RUTA
 // app.use('/api/admin', adminRoutes); // Comentado si no se usa directamente
 
 app.get('/health', (req, res) => {
