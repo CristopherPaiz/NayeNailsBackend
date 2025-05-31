@@ -8,6 +8,7 @@ import usuariosRoutes from './routes/usuarios.routes.js'
 import configuracionesRoutes from './routes/configuraciones.routes.js'
 import visitasRoutes from './routes/visitas.routes.js'
 import dashboardRoutes from './routes/dashboard.routes.js'
+import siteUploadsRoutes from './routes/siteUploads.routes.js' // NUEVA RUTA
 // adminRoutes no se usa directamente si las funcionalidades de admin están en sus propios módulos (usuarios, disenios, etc.)
 // import adminRoutes from './routes/admin.routes.js';
 import dotenv from 'dotenv'
@@ -31,7 +32,7 @@ if (missingVars.length > 0) {
   process.exit(1)
 }
 
-app.enable('trust proxy') // Confiar en el proxy más cercano
+app.enable('trust proxy')
 
 app.use(
   cors({
@@ -88,6 +89,7 @@ app.use('/api/usuarios', usuariosRoutes)
 app.use('/api/configuraciones-sitio', configuracionesRoutes)
 app.use('/api/visitas', visitasRoutes)
 app.use('/api/dashboard', dashboardRoutes)
+app.use('/api/site-uploads', siteUploadsRoutes) // USO DE NUEVA RUTA
 // app.use('/api/admin', adminRoutes);
 
 app.get('/health', (req, res) => {

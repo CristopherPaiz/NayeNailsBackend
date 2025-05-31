@@ -18,7 +18,10 @@ const upload = multer({
   fileFilter: fileFilter
 })
 
-export const handleUpload = (fieldName = 'imagen_disenio') => {
+export const handleUpload = (
+  fieldName = 'imagen_disenio',
+  cloudinaryFolder = 'naye_nails/disenios'
+) => {
   return (req, res, next) => {
     upload.single(fieldName)(req, res, async (err) => {
       if (err) {
@@ -33,8 +36,6 @@ export const handleUpload = (fieldName = 'imagen_disenio') => {
       }
 
       if (!req.file) {
-        // Si es una actualización y no se envía archivo, está bien.
-        // Si es creación, el controlador validará si la imagen es obligatoria.
         return next()
       }
 
@@ -42,7 +43,7 @@ export const handleUpload = (fieldName = 'imagen_disenio') => {
         const result = await new Promise((resolve, reject) => {
           const uploadStream = cloudinary.uploader.upload_stream(
             {
-              folder: 'naye_nails/disenios',
+              folder: cloudinaryFolder,
               format: 'webp',
               transformation: [
                 { width: 1000, height: 1000, crop: 'limit' },
@@ -72,12 +73,15 @@ export const handleUpload = (fieldName = 'imagen_disenio') => {
   }
 }
 
+export const handleSiteConfigUpload = (fieldName = 'site_image') => {
+  return handleUpload(fieldName, 'naye_nails/site_config_images')
+}
+
 export const deleteCloudinaryImage = async (publicId) => {
   if (!publicId) return
   try {
     await cloudinary.uploader.destroy(publicId)
   } catch (error) {
     console.error(`Error al eliminar imagen ${publicId} de Cloudinary:`, error)
-    // No relanzar el error para seguir el flujo, según requisitos.
   }
 }
