@@ -1,4 +1,5 @@
 import { getDb } from '../database/connection.js'
+import { deleteCloudinaryImage } from '../middlewares/upload.middleware.js'
 
 export const getTextosColoresConfig = async (req, res) => {
   try {
@@ -26,7 +27,10 @@ export const getTextosColoresConfig = async (req, res) => {
         url_facebook: 'https://facebook.com/profile.php?id=61575180189391',
         coordenadas_mapa: '14.850236,-91.510423',
         configuracion_colores: null,
-        configuracion_servicios: null
+        configuracion_servicios: null,
+        horario_negocio: 'Lunes a Viernes: 9:00 AM - 5:00 PM', // Valor por defecto
+        imagen_ubicacion_url: '/pics/local.png', // Valor por defecto
+        imagen_ubicacion_public_id: null // Valor por defecto
       })
     }
     const config = rows[0]
@@ -42,7 +46,6 @@ export const getTextosColoresConfig = async (req, res) => {
       }
     } catch (parseError) {
       console.error('Error parseando JSON de configuraciones:', parseError)
-      // Devolver los campos como strings si falla el parseo, o manejar el error como prefieras
     }
 
     return res.status(200).json(config)
@@ -63,7 +66,10 @@ export const updateTextosColoresConfig = async (req, res) => {
     url_facebook,
     coordenadas_mapa,
     configuracion_colores,
-    configuracion_servicios
+    configuracion_servicios,
+    horario_negocio, // Nuevo campo
+    imagen_ubicacion_url, // Nuevo campo
+    imagen_ubicacion_public_id // Nuevo campo
   } = req.body
 
   const db = await getDb()
@@ -82,14 +88,49 @@ export const updateTextosColoresConfig = async (req, res) => {
         ? configuracion_servicios
         : JSON.stringify(configuracion_servicios)
 
+    // Obtener la configuración actual para manejar la imagen de ubicación
+    const {
+      rows: [currentConfig]
+    } = await db.execute({
+      sql: 'SELECT imagen_ubicacion_url, imagen_ubicacion_public_id FROM TextosColoresConfiguraciones WHERE id = ?',
+      args: [1]
+    })
+
+    let finalImageUrl = imagen_ubicacion_url
+    let finalImagePublicId = imagen_ubicacion_public_id
+    let oldPublicIdToDelete = null
+
+    if (
+      imagen_ubicacion_url &&
+      currentConfig &&
+      imagen_ubicacion_url !== currentConfig.imagen_ubicacion_url
+    ) {
+      // Si la URL de la imagen de ubicación cambió y había una anterior con public_id, marcarla para borrar
+      if (currentConfig.imagen_ubicacion_public_id) {
+        oldPublicIdToDelete = currentConfig.imagen_ubicacion_public_id
+      }
+    } else if (
+      !imagen_ubicacion_url &&
+      currentConfig &&
+      currentConfig.imagen_ubicacion_url
+    ) {
+      // Si la URL se eliminó (es null o vacía) y había una imagen antes
+      if (currentConfig.imagen_ubicacion_public_id) {
+        oldPublicIdToDelete = currentConfig.imagen_ubicacion_public_id
+      }
+      finalImageUrl = null // Asegurar que se guarda como null
+      finalImagePublicId = null // Asegurar que se guarda como null
+    }
+
     await db.execute({
       sql: `
         INSERT INTO TextosColoresConfiguraciones (
           id, nombre_negocio, slogan_negocio, logo_negocio_url, texto_carrusel_secundario,
           texto_direccion_unificado, telefono_unificado, url_facebook, coordenadas_mapa,
-          configuracion_colores, configuracion_servicios, fecha_actualizacion
+          configuracion_colores, configuracion_servicios, fecha_actualizacion,
+          horario_negocio, imagen_ubicacion_url, imagen_ubicacion_public_id
         ) VALUES (
-          1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')
+          1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW'), ?, ?, ?
         )
         ON CONFLICT(id) DO UPDATE SET
           nombre_negocio = excluded.nombre_negocio,
@@ -102,7 +143,10 @@ export const updateTextosColoresConfig = async (req, res) => {
           coordenadas_mapa = excluded.coordenadas_mapa,
           configuracion_colores = excluded.configuracion_colores,
           configuracion_servicios = excluded.configuracion_servicios,
-          fecha_actualizacion = STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')
+          fecha_actualizacion = STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW'),
+          horario_negocio = excluded.horario_negocio,
+          imagen_ubicacion_url = excluded.imagen_ubicacion_url,
+          imagen_ubicacion_public_id = excluded.imagen_ubicacion_public_id
       `,
       args: [
         nombre_negocio,
@@ -114,9 +158,16 @@ export const updateTextosColoresConfig = async (req, res) => {
         url_facebook,
         coordenadas_mapa,
         coloresString,
-        serviciosString
+        serviciosString,
+        horario_negocio,
+        finalImageUrl, // Usar la URL final
+        finalImagePublicId // Usar el public_id final
       ]
     })
+
+    if (oldPublicIdToDelete && oldPublicIdToDelete !== finalImagePublicId) {
+      await deleteCloudinaryImage(oldPublicIdToDelete)
+    }
 
     const {
       rows: [updatedConfig]

@@ -77,6 +77,10 @@ export const handleSiteConfigUpload = (fieldName = 'site_image') => {
   return handleUpload(fieldName, 'naye_nails/site_config_images')
 }
 
+export const handleLocationImageUpload = (fieldName = 'location_image') => {
+  return handleUpload(fieldName, 'naye_nails/location_images')
+}
+
 export const deleteCloudinaryImage = async (publicId) => {
   if (!publicId) return
   try {

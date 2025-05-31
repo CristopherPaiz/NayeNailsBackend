@@ -9,7 +9,8 @@ import configuracionesRoutes from './routes/configuraciones.routes.js'
 import visitasRoutes from './routes/visitas.routes.js'
 import dashboardRoutes from './routes/dashboard.routes.js'
 import siteUploadsRoutes from './routes/siteUploads.routes.js'
-import textosColoresRoutes from './routes/textosColores.routes.js' // NUEVA RUTA
+import textosColoresRoutes from './routes/textosColores.routes.js'
+import citasRoutes from './routes/citas.routes.js' // NUEVA RUTA DE CITAS
 // adminRoutes no se usa directamente si las funcionalidades de admin están en sus propios módulos (usuarios, disenios, etc.)
 // import adminRoutes from './routes/admin.routes.js';
 import dotenv from 'dotenv'
@@ -88,10 +89,11 @@ app.use('/api/categorias', categoriasRoutes)
 app.use('/api/disenios', diseniosRoutes)
 app.use('/api/usuarios', usuariosRoutes)
 app.use('/api/configuraciones-sitio', configuracionesRoutes)
-app.use('/api/textos-colores', textosColoresRoutes) // USO DE NUEVA RUTA
+app.use('/api/textos-colores', textosColoresRoutes)
 app.use('/api/visitas', visitasRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/site-uploads', siteUploadsRoutes)
+app.use('/api/citas', citasRoutes) // USO DE NUEVA RUTA DE CITAS
 // app.use('/api/admin', adminRoutes);
 
 app.get('/health', (req, res) => {
