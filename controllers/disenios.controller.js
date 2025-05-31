@@ -1,23 +1,63 @@
 import { getDb } from '../database/connection.js'
 import { toSlug } from '../utils/textUtils.js'
-import { deleteCloudinaryImage } from '../middlewares/upload.middleware.js' // Importar helper
+import { deleteCloudinaryImage } from '../middlewares/upload.middleware.js'
 
-// --- getAllDisenios (sin cambios significativos en su lógica principal, pero se incluye completo) ---
 export const getAllDisenios = async (req, res) => {
+  const {
+    page = 1,
+    limit = 10,
+    search = '',
+    // Los filtros de categoría (ej: req.query.servicios, req.query.colores)
+    // se aplicarán en el frontend sobre los datos paginados y buscados por texto.
+    ...categoryFilters
+  } = req.query
+
+  const pageNumber = parseInt(page, 10)
+  const limitNumber = parseInt(limit, 10)
+  const offset = (pageNumber - 1) * limitNumber
+  const searchTerm = search ? `%${search.toLowerCase()}%` : null
+
   try {
     const db = await getDb()
     if (!db)
       return res.status(503).json({ message: 'Base de datos no disponible.' })
 
+    let diseniosSql = `
+      SELECT
+        d.id, d.nombre, d.descripcion, d.imagen_url, d.precio, d.oferta, d.duracion, d.activo, d.imagen_public_id
+      FROM Disenios d
+      WHERE d.activo = 1
+    `
+    let countSql = `
+      SELECT COUNT(d.id) as total
+      FROM Disenios d
+      WHERE d.activo = 1
+    `
+    const sqlArgs = []
+
+    if (searchTerm) {
+      const searchCondition =
+        '(LOWER(d.nombre) LIKE ? OR LOWER(d.descripcion) LIKE ?)'
+      diseniosSql += ` AND ${searchCondition}`
+      countSql += ` AND ${searchCondition}`
+      sqlArgs.push(searchTerm, searchTerm)
+    }
+
+    diseniosSql += ' ORDER BY d.nombre ASC LIMIT ? OFFSET ?'
+    sqlArgs.push(limitNumber, offset)
+
     const { rows: disenios } = await db.execute({
-      sql: `
-        SELECT
-          d.id, d.nombre, d.descripcion, d.imagen_url, d.precio, d.oferta, d.duracion, d.activo, d.imagen_public_id
-        FROM Disenios d
-        WHERE d.activo = 1
-        ORDER BY d.nombre ASC
-      `
+      sql: diseniosSql,
+      args: sqlArgs
     })
+
+    const countArgs = searchTerm ? [searchTerm, searchTerm] : []
+    const { rows: countResult } = await db.execute({
+      sql: countSql,
+      args: countArgs
+    })
+    const totalDisenios = countResult[0]?.total ?? 0
+    const totalPages = Math.ceil(totalDisenios / limitNumber)
 
     const diseniosConCategorias = await Promise.all(
       disenios.map(async (disenio) => {
@@ -52,24 +92,90 @@ export const getAllDisenios = async (req, res) => {
         return { ...disenio, ...categoriasParaFrontend }
       })
     )
-    return res.status(200).json(diseniosConCategorias)
+
+    // Aplicar filtros de categoría en el backend sobre los resultados de la página actual
+    let diseniosFiltrados = diseniosConCategorias
+    const activeCategoryFilterKeys = Object.keys(categoryFilters).filter(
+      (key) =>
+        categoryFilters[key] &&
+        typeof categoryFilters[key] === 'string' &&
+        ![('page', 'limit', 'search')].includes(key)
+    )
+
+    if (activeCategoryFilterKeys.length > 0) {
+      diseniosFiltrados = diseniosConCategorias.filter((disenio) => {
+        return activeCategoryFilterKeys.every((filterKey) => {
+          const filterValues = categoryFilters[filterKey].split(',')
+          const disenioValuesForCategory = disenio[filterKey] // Asume que disenio tiene propiedades como disenio.servicios = ["slug1", "slug2"]
+          if (
+            !Array.isArray(disenioValuesForCategory) ||
+            disenioValuesForCategory.length === 0
+          ) {
+            return false
+          }
+          return filterValues.every((filterValue) =>
+            disenioValuesForCategory.includes(filterValue)
+          )
+        })
+      })
+    }
+
+    return res.status(200).json({
+      disenios: diseniosFiltrados,
+      currentPage: pageNumber,
+      totalPages,
+      totalDisenios
+    })
   } catch (error) {
     console.error('Error al obtener diseños:', error)
     return res.status(500).json({ message: 'Error interno del servidor.' })
   }
 }
 
-// --- getAllDiseniosAdmin (sin cambios significativos en su lógica principal, pero se incluye completo) ---
 export const getAllDiseniosAdmin = async (req, res) => {
+  const { page = 1, limit = 10, search = '' } = req.query
+  const pageNumber = parseInt(page, 10)
+  const limitNumber = parseInt(limit, 10)
+  const offset = (pageNumber - 1) * limitNumber
+  const searchTerm = search ? `%${search.toLowerCase()}%` : null
+
   try {
     const db = await getDb()
     if (!db)
       return res.status(503).json({ message: 'Base de datos no disponible.' })
 
-    // Incluir imagen_public_id
+    let diseniosSql =
+      'SELECT id, nombre, descripcion, imagen_url, imagen_public_id, precio, oferta, duracion, activo, fecha_creacion FROM Disenios'
+    let countSql = 'SELECT COUNT(id) as total FROM Disenios'
+    const whereClauses = []
+    const sqlArgs = []
+    const countArgs = []
+
+    if (searchTerm) {
+      whereClauses.push('(LOWER(nombre) LIKE ? OR LOWER(descripcion) LIKE ?)')
+      sqlArgs.push(searchTerm, searchTerm)
+      countArgs.push(searchTerm, searchTerm)
+    }
+
+    if (whereClauses.length > 0) {
+      const whereString = ` WHERE ${whereClauses.join(' AND ')}`
+      diseniosSql += whereString
+      countSql += whereString
+    }
+
+    diseniosSql += ' ORDER BY fecha_creacion DESC LIMIT ? OFFSET ?'
+    sqlArgs.push(limitNumber, offset)
+
     const { rows: disenios } = await db.execute({
-      sql: 'SELECT id, nombre, descripcion, imagen_url, imagen_public_id, precio, oferta, duracion, activo, fecha_creacion FROM Disenios ORDER BY fecha_creacion DESC'
+      sql: diseniosSql,
+      args: sqlArgs
     })
+    const { rows: countResult } = await db.execute({
+      sql: countSql,
+      args: countArgs
+    })
+    const totalDisenios = countResult[0]?.total ?? 0
+    const totalPages = Math.ceil(totalDisenios / limitNumber)
 
     const diseniosEnriquecidos = await Promise.all(
       disenios.map(async (disenio) => {
@@ -84,19 +190,22 @@ export const getAllDiseniosAdmin = async (req, res) => {
       })
     )
 
-    return res.status(200).json(diseniosEnriquecidos)
+    return res.status(200).json({
+      disenios: diseniosEnriquecidos,
+      currentPage: pageNumber,
+      totalPages,
+      totalDisenios
+    })
   } catch (error) {
     console.error('Error al obtener diseños para admin:', error)
     return res.status(500).json({ message: 'Error interno del servidor.' })
   }
 }
 
-// --- createDisenio (Modificado) ---
 export const createDisenio = async (req, res) => {
   const { nombre, descripcion, precio, oferta, duracion } = req.body
   let { subcategorias } = req.body
 
-  // La imagen viene de req.cloudinaryUploadResult gracias al middleware handleUpload
   const imagen_info = req.cloudinaryUploadResult
 
   if (!nombre) {
@@ -106,12 +215,11 @@ export const createDisenio = async (req, res) => {
     return res.status(400).json({ message: 'La imagen es obligatoria.' })
   }
 
-  // Asegurar que subcategorías sea un array y convertir IDs a números
   if (typeof subcategorias === 'string') {
-    subcategorias = [subcategorias] // Si llega un solo ID como string
+    subcategorias = [subcategorias]
   }
   if (!Array.isArray(subcategorias)) {
-    subcategorias = [] // Si no es un array o string, inicializar como vacío
+    subcategorias = []
   }
   subcategorias = subcategorias
     .map((id) => Number(id))
@@ -135,7 +243,7 @@ export const createDisenio = async (req, res) => {
         descripcion ?? null,
         imagen_info.secure_url,
         imagen_info.public_id,
-        precio || null, // Usar || para convertir string vacío a null
+        precio || null,
         oferta || null,
         duracion || null
       ]
@@ -145,7 +253,6 @@ export const createDisenio = async (req, res) => {
       ? Number(resultDisenio.lastInsertRowid)
       : null
     if (!disenioId) {
-      // Si la inserción falló, intentar eliminar la imagen subida a Cloudinary
       if (imagen_info.public_id) {
         await deleteCloudinaryImage(imagen_info.public_id)
       }
@@ -181,7 +288,6 @@ export const createDisenio = async (req, res) => {
     })
   } catch (error) {
     console.error('Error al crear diseño:', error)
-    // Si hubo un error después de subir la imagen pero antes de guardar en BD (o durante), eliminarla.
     if (imagen_info && imagen_info.public_id) {
       await deleteCloudinaryImage(imagen_info.public_id)
     }
@@ -194,13 +300,12 @@ export const createDisenio = async (req, res) => {
   }
 }
 
-// --- updateDisenio (Modificado) ---
 export const updateDisenio = async (req, res) => {
   const { id } = req.params
   const { nombre, descripcion, precio, oferta, duracion } = req.body
   let { subcategorias } = req.body
 
-  const nueva_imagen_info = req.cloudinaryUploadResult // Puede ser undefined si no se sube nueva imagen
+  const nueva_imagen_info = req.cloudinaryUploadResult
 
   if (!nombre) {
     return res.status(400).json({ message: 'El nombre es obligatorio.' })
@@ -271,8 +376,6 @@ export const updateDisenio = async (req, res) => {
     })
 
     if (rowsAffected === 0) {
-      // Esto no debería pasar si disenioExistente fue encontrado, pero es una salvaguarda.
-      // Si se subió una nueva imagen pero la actualización de BD falló, eliminar la nueva imagen.
       if (nueva_imagen_info?.public_id) {
         await deleteCloudinaryImage(nueva_imagen_info.public_id)
       }
@@ -281,7 +384,6 @@ export const updateDisenio = async (req, res) => {
         .json({ message: 'Diseño no encontrado o no se pudo actualizar.' })
     }
 
-    // Si la actualización fue exitosa y había una imagen antigua para borrar, bórrala.
     if (public_id_antiguo_para_borrar) {
       await deleteCloudinaryImage(public_id_antiguo_para_borrar)
     }
@@ -318,7 +420,6 @@ export const updateDisenio = async (req, res) => {
     })
   } catch (error) {
     console.error('Error al actualizar diseño:', error)
-    // Si se subió una nueva imagen pero algo falló después (ej. constraint error), eliminar la nueva imagen.
     if (nueva_imagen_info?.public_id) {
       await deleteCloudinaryImage(nueva_imagen_info.public_id)
     }
@@ -331,7 +432,6 @@ export const updateDisenio = async (req, res) => {
   }
 }
 
-// --- toggleActivoDisenio (sin cambios) ---
 export const toggleActivoDisenio = async (req, res) => {
   const { id } = req.params
   try {
@@ -368,7 +468,6 @@ export const toggleActivoDisenio = async (req, res) => {
   }
 }
 
-// --- deleteDisenio (Modificado) ---
 export const deleteDisenio = async (req, res) => {
   const { id } = req.params
   try {
@@ -384,13 +483,11 @@ export const deleteDisenio = async (req, res) => {
       args: [id]
     })
 
-    // Eliminar asociaciones de subcategorías primero
     await db.execute({
       sql: 'DELETE FROM DisenioSubcategorias WHERE id_disenio = ?',
       args: [id]
     })
 
-    // Luego eliminar el diseño principal
     const { rowsAffected } = await db.execute({
       sql: 'DELETE FROM Disenios WHERE id = ?',
       args: [id]
@@ -402,7 +499,6 @@ export const deleteDisenio = async (req, res) => {
       })
     }
 
-    // Si el diseño fue eliminado de la BD y tenía un public_id, eliminar de Cloudinary
     if (disenioParaEliminar && disenioParaEliminar.imagen_public_id) {
       await deleteCloudinaryImage(disenioParaEliminar.imagen_public_id)
     }
