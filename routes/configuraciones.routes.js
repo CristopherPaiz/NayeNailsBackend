@@ -8,7 +8,7 @@ import { authMiddleware } from '../middlewares/auth.js'
 const configuracionesRoutes = express.Router()
 
 // Rutas protegidas para admin
-configuracionesRoutes.get('/', authMiddleware, getAllConfiguraciones)
+configuracionesRoutes.get('/', getAllConfiguraciones)
 configuracionesRoutes.post('/', authMiddleware, updateConfiguracion) // Usar POST para crear/actualizar
 
 export default configuracionesRoutes
