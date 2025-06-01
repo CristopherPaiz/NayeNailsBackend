@@ -3,64 +3,48 @@ import { toSlug } from '../utils/textUtils.js'
 import { deleteCloudinaryImage } from '../middlewares/upload.middleware.js'
 
 export const getAllDisenios = async (req, res) => {
-  const {
-    page = 1,
-    limit = 10,
-    search = '',
-    // Los filtros de categoría (ej: req.query.servicios, req.query.colores)
-    // se aplicarán en el frontend sobre los datos paginados y buscados por texto.
-    ...categoryFilters
-  } = req.query
+  const { page = 1, limit = 10, search = '', ...categoryFilters } = req.query
 
-  const pageNumber = parseInt(page, 10)
+  let pageNumber = parseInt(page, 10)
   const limitNumber = parseInt(limit, 10)
-  const offset = (pageNumber - 1) * limitNumber
   const searchTerm = search ? `%${search.toLowerCase()}%` : null
+
+  if (isNaN(pageNumber) || pageNumber < 1) {
+    pageNumber = 1
+  }
 
   try {
     const db = await getDb()
     if (!db)
       return res.status(503).json({ message: 'Base de datos no disponible.' })
 
-    let diseniosSql = `
+    // Paso 1: Obtener TODOS los diseños activos que coincidan con el término de búsqueda (si existe)
+    // No aplicamos paginación aquí todavía, porque necesitamos todos los resultados potenciales para filtrar por categoría.
+    let diseniosBaseSql = `
       SELECT
         d.id, d.nombre, d.descripcion, d.imagen_url, d.precio, d.oferta, d.duracion, d.activo, d.imagen_public_id
       FROM Disenios d
       WHERE d.activo = 1
     `
-    let countSql = `
-      SELECT COUNT(d.id) as total
-      FROM Disenios d
-      WHERE d.activo = 1
-    `
-    const sqlArgs = []
+    const sqlArgsBase = []
 
     if (searchTerm) {
-      const searchCondition =
-        '(LOWER(d.nombre) LIKE ? OR LOWER(d.descripcion) LIKE ?)'
-      diseniosSql += ` AND ${searchCondition}`
-      countSql += ` AND ${searchCondition}`
-      sqlArgs.push(searchTerm, searchTerm)
+      diseniosBaseSql +=
+        ' AND (LOWER(d.nombre) LIKE ? OR LOWER(d.descripcion) LIKE ?)'
+      sqlArgsBase.push(searchTerm, searchTerm)
     }
+    // El orden se aplicará después del filtrado por categorías si es necesario, o se puede mantener aquí.
+    // Por ahora, lo dejamos para que la lista base esté ordenada.
+    diseniosBaseSql += ' ORDER BY d.nombre ASC'
 
-    diseniosSql += ' ORDER BY d.nombre ASC LIMIT ? OFFSET ?'
-    sqlArgs.push(limitNumber, offset)
-
-    const { rows: disenios } = await db.execute({
-      sql: diseniosSql,
-      args: sqlArgs
+    const { rows: allPotentialDisenios } = await db.execute({
+      sql: diseniosBaseSql,
+      args: sqlArgsBase
     })
 
-    const countArgs = searchTerm ? [searchTerm, searchTerm] : []
-    const { rows: countResult } = await db.execute({
-      sql: countSql,
-      args: countArgs
-    })
-    const totalDisenios = countResult[0]?.total ?? 0
-    const totalPages = Math.ceil(totalDisenios / limitNumber)
-
-    const diseniosConCategorias = await Promise.all(
-      disenios.map(async (disenio) => {
+    // Paso 2: Enriquecer cada diseño con sus categorías (solo activas)
+    const allDiseniosConCategoriasActivas = await Promise.all(
+      allPotentialDisenios.map(async (disenio) => {
         const { rows: subcategoriasAsociadas } = await db.execute({
           sql: `
             SELECT
@@ -74,7 +58,7 @@ export const getAllDisenios = async (req, res) => {
             JOIN Subcategorias s ON ds.id_subcategoria = s.id
             JOIN CategoriasPadre cp ON s.id_categoria_padre = cp.id
             WHERE ds.id_disenio = ? AND s.activo = 1 AND cp.activo = 1
-          `,
+          `, // Asegura que solo se traigan subcategorías y categorías padre ACTIVAS
           args: [disenio.id]
         })
 
@@ -88,43 +72,80 @@ export const getAllDisenios = async (req, res) => {
             toSlug(sub.subcategoria_nombre)
           )
         })
-
+        // Si un diseño no tiene NINGUNA categoría activa asociada después de este proceso,
+        // sus propiedades de categoría estarán vacías (ej: disenio.servicios = undefined o [])
         return { ...disenio, ...categoriasParaFrontend }
       })
     )
 
-    // Aplicar filtros de categoría en el backend sobre los resultados de la página actual
-    let diseniosFiltrados = diseniosConCategorias
+    // Paso 3: Aplicar filtros de categoría en JavaScript sobre la lista enriquecida
+    let diseniosFiltradosCompletos = allDiseniosConCategoriasActivas
     const activeCategoryFilterKeys = Object.keys(categoryFilters).filter(
       (key) =>
         categoryFilters[key] &&
-        typeof categoryFilters[key] === 'string' &&
-        ![('page', 'limit', 'search')].includes(key)
+        (typeof categoryFilters[key] === 'string' ||
+          Array.isArray(categoryFilters[key])) &&
+        categoryFilters[key].length > 0 &&
+        !['page', 'limit', 'search'].includes(key)
     )
 
     if (activeCategoryFilterKeys.length > 0) {
-      diseniosFiltrados = diseniosConCategorias.filter((disenio) => {
-        return activeCategoryFilterKeys.every((filterKey) => {
-          const filterValues = categoryFilters[filterKey].split(',')
-          const disenioValuesForCategory = disenio[filterKey] // Asume que disenio tiene propiedades como disenio.servicios = ["slug1", "slug2"]
-          if (
-            !Array.isArray(disenioValuesForCategory) ||
-            disenioValuesForCategory.length === 0
-          ) {
-            return false
-          }
-          return filterValues.every((filterValue) =>
-            disenioValuesForCategory.includes(filterValue)
-          )
-        })
-      })
+      diseniosFiltradosCompletos = allDiseniosConCategoriasActivas.filter(
+        (disenio) => {
+          return activeCategoryFilterKeys.every((filterKey) => {
+            let filterValues = categoryFilters[filterKey]
+            if (typeof filterValues === 'string') {
+              filterValues = filterValues
+                .split(',')
+                .map((val) => val.trim())
+                .filter(Boolean)
+            }
+
+            const disenioValuesForCategory = disenio[filterKey] // Esta propiedad ya contiene solo slugs de categorías activas
+            if (
+              !Array.isArray(disenioValuesForCategory) ||
+              disenioValuesForCategory.length === 0
+            ) {
+              // Si el diseño no tiene esta categoría (o no tiene ninguna activa de este tipo), no cumple el filtro
+              return false
+            }
+            // El diseño debe tener TODOS los valores de filtro para esta clave de categoría
+            return filterValues.every((filterValue) =>
+              disenioValuesForCategory.includes(filterValue)
+            )
+          })
+        }
+      )
+    }
+    // Adicionalmente, si un diseño quedó sin NINGUNA categoría después del enriquecimiento
+    // (porque todas sus categorías asociadas estaban inactivas), y hay filtros de categoría activos,
+    // podría ser necesario filtrarlos aquí si la lógica anterior no los cubre.
+    // Sin embargo, si un diseño no tiene la `filterKey` (ej. `disenio.servicios` es undefined),
+    // la condición `!Array.isArray(disenioValuesForCategory)` ya lo excluiría.
+
+    // Paso 4: Calcular paginación sobre el resultado FINALMENTE filtrado
+    const totalDisenios = diseniosFiltradosCompletos.length
+    let totalPages = Math.ceil(totalDisenios / limitNumber)
+    if (totalPages === 0 && totalDisenios === 0) {
+      totalPages = 1 // Para que el frontend muestre "página 1 de 1" aunque no haya resultados
     }
 
+    let finalPageNumber = pageNumber
+    if (finalPageNumber > totalPages) {
+      finalPageNumber = totalPages > 0 ? totalPages : 1
+    }
+
+    const finalOffset = (finalPageNumber - 1) * limitNumber
+    const diseniosParaPaginaActual = diseniosFiltradosCompletos.slice(
+      finalOffset,
+      finalOffset + limitNumber
+    )
+
     return res.status(200).json({
-      disenios: diseniosFiltrados,
-      currentPage: pageNumber,
+      disenios: diseniosParaPaginaActual,
+      currentPage: finalPageNumber,
       totalPages,
-      totalDisenios
+      totalDisenios // Este es el total DESPUÉS de todos los filtros (búsqueda y categoría)
     })
   } catch (error) {
     console.error('Error al obtener diseños:', error)
