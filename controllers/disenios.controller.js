@@ -35,7 +35,7 @@ export const getAllDisenios = async (req, res) => {
     }
     // El orden se aplicará después del filtrado por categorías si es necesario, o se puede mantener aquí.
     // Por ahora, lo dejamos para que la lista base esté ordenada.
-    diseniosBaseSql += ' ORDER BY d.nombre ASC'
+    diseniosBaseSql += ' ORDER BY d.id DESC'
 
     const { rows: allPotentialDisenios } = await db.execute({
       sql: diseniosBaseSql,
