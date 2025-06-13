@@ -163,7 +163,7 @@ export const getPreviewSocialMedia = async (req, res) => {
       disenio?.descripcion ||
       'Encuentra los mejores diseños de uñas personalizados.'
     const image =
-      'https://www.shutterstock.com/image-photo/blue-pink-nail-polish-on-260nw-236859715.jpg'
+      'https://res.cloudinary.com/drdkb6gjx/image/upload/v1724088857/cld-sample-5.jpg'
     const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`
 
     res.setHeader('Content-Type', 'text/html')
