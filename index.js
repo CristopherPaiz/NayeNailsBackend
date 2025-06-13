@@ -13,7 +13,11 @@ import textosColoresRoutes from './routes/textosColores.routes.js'
 import citasRoutes from './routes/citas.routes.js'
 import dotenv from 'dotenv'
 import { getDb } from './database/connection.js'
-import { generatePreview } from './controllers/preview.controller.js'
+import {
+  generatePreview,
+  generateHomePreview,
+  generateDefaultPreview
+} from './controllers/preview.controller.js'
 
 dotenv.config()
 
@@ -97,8 +101,13 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' })
 })
 
+// Rutas explícitas para las vistas previas
+app.get('/', generateHomePreview)
 app.get('/explorar-unas/:id', generatePreview)
-app.get('*', generatePreview)
+app.get('/explorar-unas', generatePreview)
+
+// Fallback para cualquier otra ruta
+app.get('*', generateDefaultPreview)
 
 app.use((err, req, res, next) => {
   console.error('Error en la aplicación:', err.message, err.stack)

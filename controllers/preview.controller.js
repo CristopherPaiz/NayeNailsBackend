@@ -89,113 +89,122 @@ const renderHtml = (res, title, description, image, fullUrl) => {
   `)
 }
 
+export const generateHomePreview = async (req, res) => {
+  const frontendUrl = process.env.FRONTEND_URL.replace(/\/$/, '')
+  const fullUrl = `${frontendUrl}${req.originalUrl}`
+  try {
+    const db = await getDb()
+    const {
+      rows: [config]
+    } = await db.execute(
+      'SELECT nombre_negocio, slogan_negocio, logo_negocio_url FROM TextosColoresConfiguraciones WHERE id = 1'
+    )
+    const title = config?.nombre_negocio || 'Naye Nails'
+    const description =
+      config?.slogan_negocio || 'Donde la perfeccion es el estándar'
+    const image =
+      config?.logo_negocio_url ||
+      'https://res.cloudinary.com/drdkb6gjx/image/upload/v1749846073/jc8udap3bfxjvwuxabxm.jpg'
+    return renderHtml(res, title, description, image, fullUrl)
+  } catch (error) {
+    console.error('Error generando preview para Home:', error)
+    return generateDefaultPreview(req, res)
+  }
+}
+
+export const generateDefaultPreview = (req, res) => {
+  const frontendUrl = process.env.FRONTEND_URL.replace(/\/$/, '')
+  const fullUrl = `${frontendUrl}${req.originalUrl}`
+  const defaultTitle = 'Naye Nails | Salón de Uñas'
+  const defaultDescription =
+    'Descubre el arte en tus uñas. Diseños personalizados, colores vibrantes y las últimas tendencias.'
+  const defaultImage =
+    'https://res.cloudinary.com/drdkb6gjx/image/upload/v1749846073/jc8udap3bfxjvwuxabxm.jpgg'
+  return renderHtml(
+    res,
+    defaultTitle,
+    defaultDescription,
+    defaultImage,
+    fullUrl
+  )
+}
+
 export const generatePreview = async (req, res) => {
+  const frontendUrl = process.env.FRONTEND_URL.replace(/\/$/, '')
+  const fullUrl = `${frontendUrl}${req.originalUrl}`
+  const { id } = req.params
+  const { query } = req
+
   try {
     const db = await getDb()
     if (!db) {
       return res.status(503).send('Servicio no disponible temporalmente.')
     }
 
-    const frontendUrl = process.env.FRONTEND_URL.replace(/\/$/, '')
-    const fullUrl = `${frontendUrl}${req.originalUrl}`
-    const { id } = req.params
-    const { query, path } = req
-
-    if (path === '/') {
+    if (id) {
       const {
-        rows: [config]
-      } = await db.execute(
-        'SELECT nombre_negocio, slogan_negocio, logo_negocio_url FROM TextosColoresConfiguraciones WHERE id = 1'
-      )
-      const title = config?.nombre_negocio || 'Naye Nails'
-      const description =
-        config?.slogan_negocio || 'Donde la perfeccion es el estándar'
-      const image =
-        config?.logo_negocio_url ||
-        'https://res.cloudinary.com/drdkb6gjx/image/upload/v1749846073/jc8udap3bfxjvwuxabxm.jpg'
-      return renderHtml(res, title, description, image, fullUrl)
-    }
-
-    if (path.startsWith('/explorar-unas')) {
-      if (id) {
-        const {
-          rows: [disenio]
-        } = await db.execute({
-          sql: 'SELECT nombre, descripcion, imagen_url FROM Disenios WHERE id = ? AND activo = 1',
-          args: [id]
-        })
-
-        if (disenio) {
-          const title = `${disenio.nombre} | Naye Nails`
-          const description =
-            disenio.descripcion ||
-            'Descubre este increíble diseño y muchos más en Naye Nails.'
-          const image = disenio.imagen_url
-          return renderHtml(res, title, description, image, fullUrl)
-        }
-      }
-
-      const { rows: categorias } = await db.execute({
-        sql: `
-          SELECT cp.id, cp.nombre, s.nombre as sub_nombre
-          FROM CategoriasPadre cp
-          JOIN Subcategorias s ON cp.id = s.id_categoria_padre
-          WHERE cp.activo = 1 AND s.activo = 1
-        `
+        rows: [disenio]
+      } = await db.execute({
+        sql: 'SELECT nombre, descripcion, imagen_url FROM Disenios WHERE id = ? AND activo = 1',
+        args: [id]
       })
 
-      const categoriasAgrupadas = categorias.reduce((acc, row) => {
-        const { id, nombre, sub_nombre } = row
-        if (!acc[id]) {
-          acc[id] = { id, nombre, subcategorias: [] }
-        }
-        acc[id].subcategorias.push({ nombre: sub_nombre })
-        return acc
-      }, {})
-      const categoriasArray = Object.values(categoriasAgrupadas)
-
-      const diseniosFiltrados = await filtrarDiseniosConFiltros(query)
-      let disenioAleatorio = null
-      if (diseniosFiltrados && diseniosFiltrados.length > 0) {
-        const randomIndex = Math.floor(Math.random() * diseniosFiltrados.length)
-        disenioAleatorio = diseniosFiltrados[randomIndex]
-      } else {
-        const {
-          rows: [random]
-        } = await db.execute(
-          'SELECT imagen_url FROM Disenios WHERE activo = 1 ORDER BY RANDOM() LIMIT 1'
-        )
-        if (random) disenioAleatorio = { imagen_url: random.imagen_url }
+      if (disenio) {
+        const title = `${disenio.nombre} | Naye Nails`
+        const description =
+          disenio.descripcion ||
+          'Descubre este increíble diseño y muchos más en Naye Nails.'
+        const image = disenio.imagen_url
+        return renderHtml(res, title, description, image, fullUrl)
       }
-
-      const image =
-        disenioAleatorio?.imagen_url ||
-        'https://res.cloudinary.com/drdkb6gjx/image/upload/v1749075111/naye_nails/disenios/g9x39nmnapgqoh4vsfxc.webp'
-      const title = `${generateDynamicTitleFromFilters(
-        query,
-        categoriasArray
-      )} | Naye Nails`
-      const description =
-        'Encuentra tu inspiración en nuestra galería de diseños. Diseños personalizados, colores vibrantes y las últimas tendencias te esperan.'
-
-      return renderHtml(res, title, description, image, fullUrl)
     }
 
-    // Fallback para cualquier otra ruta no manejada
-    const defaultTitle = 'Naye Nails | Salón de Uñas'
-    const defaultDescription =
-      'Descubre el arte en tus uñas. Diseños personalizados, colores vibrantes y las últimas tendencias.'
-    const defaultImage =
-      'https://res.cloudinary.com/drdkb6gjx/image/upload/v1749846073/jc8udap3bfxjvwuxabxm.jpg'
-    return renderHtml(
-      res,
-      defaultTitle,
-      defaultDescription,
-      defaultImage,
-      fullUrl
-    )
+    const { rows: categorias } = await db.execute({
+      sql: `
+        SELECT cp.id, cp.nombre, s.nombre as sub_nombre
+        FROM CategoriasPadre cp
+        JOIN Subcategorias s ON cp.id = s.id_categoria_padre
+        WHERE cp.activo = 1 AND s.activo = 1
+      `
+    })
+
+    const categoriasAgrupadas = categorias.reduce((acc, row) => {
+      const { id, nombre, sub_nombre } = row
+      if (!acc[id]) {
+        acc[id] = { id, nombre, subcategorias: [] }
+      }
+      acc[id].subcategorias.push({ nombre: sub_nombre })
+      return acc
+    }, {})
+    const categoriasArray = Object.values(categoriasAgrupadas)
+
+    const diseniosFiltrados = await filtrarDiseniosConFiltros(query)
+    let disenioAleatorio = null
+    if (diseniosFiltrados && diseniosFiltrados.length > 0) {
+      const randomIndex = Math.floor(Math.random() * diseniosFiltrados.length)
+      disenioAleatorio = diseniosFiltrados[randomIndex]
+    } else {
+      const {
+        rows: [random]
+      } = await db.execute(
+        'SELECT imagen_url FROM Disenios WHERE activo = 1 ORDER BY RANDOM() LIMIT 1'
+      )
+      if (random) disenioAleatorio = { imagen_url: random.imagen_url }
+    }
+
+    const image =
+      disenioAleatorio?.imagen_url ||
+      'https://res.cloudinary.com/drdkb6gjx/image/upload/v1749846755/v4hwvg6dwu5eotyrzp9t.jpg'
+    const title = `${generateDynamicTitleFromFilters(
+      query,
+      categoriasArray
+    )} | Naye Nails`
+    const description =
+      'Encuentra tu inspiración en nuestra galería de diseños. Diseños personalizados, colores vibrantes y las últimas tendencias te esperan.'
+
+    return renderHtml(res, title, description, image, fullUrl)
   } catch (error) {
     console.error('Error generando la vista previa:', error)
-    res.status(500).send('Error al generar la vista previa.')
+    return generateDefaultPreview(req, res)
   }
 }
