@@ -1,7 +1,6 @@
 import { getDb } from '../database/connection.js'
 import { toSlug } from '../utils/textUtils.js'
 import { deleteCloudinaryImage } from '../middlewares/upload.middleware.js'
-import { filtrarDiseniosConFiltros } from '../utils/filtrarDisenios.js'
 
 export const getAllDisenios = async (req, res) => {
   const { page = 1, limit = 10, search = '', ...categoryFilters } = req.query
@@ -19,8 +18,6 @@ export const getAllDisenios = async (req, res) => {
     if (!db)
       return res.status(503).json({ message: 'Base de datos no disponible.' })
 
-    // Paso 1: Obtener TODOS los diseños activos que coincidan con el término de búsqueda (si existe)
-    // No aplicamos paginación aquí todavía, porque necesitamos todos los resultados potenciales para filtrar por categoría.
     let diseniosBaseSql = `
       SELECT
         d.id, d.nombre, d.descripcion, d.imagen_url, d.precio, d.oferta, d.duracion, d.activo, d.imagen_public_id
@@ -34,8 +31,6 @@ export const getAllDisenios = async (req, res) => {
         ' AND (LOWER(d.nombre) LIKE ? OR LOWER(d.descripcion) LIKE ?)'
       sqlArgsBase.push(searchTerm, searchTerm)
     }
-    // El orden se aplicará después del filtrado por categorías si es necesario, o se puede mantener aquí.
-    // Por ahora, lo dejamos para que la lista base esté ordenada.
     diseniosBaseSql += ' ORDER BY d.id DESC'
 
     const { rows: allPotentialDisenios } = await db.execute({
@@ -43,7 +38,6 @@ export const getAllDisenios = async (req, res) => {
       args: sqlArgsBase
     })
 
-    // Paso 2: Enriquecer cada diseño con sus categorías (solo activas)
     const allDiseniosConCategoriasActivas = await Promise.all(
       allPotentialDisenios.map(async (disenio) => {
         const { rows: subcategoriasAsociadas } = await db.execute({
@@ -59,7 +53,7 @@ export const getAllDisenios = async (req, res) => {
             JOIN Subcategorias s ON ds.id_subcategoria = s.id
             JOIN CategoriasPadre cp ON s.id_categoria_padre = cp.id
             WHERE ds.id_disenio = ? AND s.activo = 1 AND cp.activo = 1
-          `, // Asegura que solo se traigan subcategorías y categorías padre ACTIVAS
+          `,
           args: [disenio.id]
         })
 
@@ -73,13 +67,10 @@ export const getAllDisenios = async (req, res) => {
             toSlug(sub.subcategoria_nombre)
           )
         })
-        // Si un diseño no tiene NINGUNA categoría activa asociada después de este proceso,
-        // sus propiedades de categoría estarán vacías (ej: disenio.servicios = undefined o [])
         return { ...disenio, ...categoriasParaFrontend }
       })
     )
 
-    // Paso 3: Aplicar filtros de categoría en JavaScript sobre la lista enriquecida
     let diseniosFiltradosCompletos = allDiseniosConCategoriasActivas
     const activeCategoryFilterKeys = Object.keys(categoryFilters).filter(
       (key) =>
@@ -102,15 +93,13 @@ export const getAllDisenios = async (req, res) => {
                 .filter(Boolean)
             }
 
-            const disenioValuesForCategory = disenio[filterKey] // Esta propiedad ya contiene solo slugs de categorías activas
+            const disenioValuesForCategory = disenio[filterKey]
             if (
               !Array.isArray(disenioValuesForCategory) ||
               disenioValuesForCategory.length === 0
             ) {
-              // Si el diseño no tiene esta categoría (o no tiene ninguna activa de este tipo), no cumple el filtro
               return false
             }
-            // El diseño debe tener TODOS los valores de filtro para esta clave de categoría
             return filterValues.every((filterValue) =>
               disenioValuesForCategory.includes(filterValue)
             )
@@ -118,17 +107,11 @@ export const getAllDisenios = async (req, res) => {
         }
       )
     }
-    // Adicionalmente, si un diseño quedó sin NINGUNA categoría después del enriquecimiento
-    // (porque todas sus categorías asociadas estaban inactivas), y hay filtros de categoría activos,
-    // podría ser necesario filtrarlos aquí si la lógica anterior no los cubre.
-    // Sin embargo, si un diseño no tiene la `filterKey` (ej. `disenio.servicios` es undefined),
-    // la condición `!Array.isArray(disenioValuesForCategory)` ya lo excluiría.
 
-    // Paso 4: Calcular paginación sobre el resultado FINALMENTE filtrado
     const totalDisenios = diseniosFiltradosCompletos.length
     let totalPages = Math.ceil(totalDisenios / limitNumber)
     if (totalPages === 0 && totalDisenios === 0) {
-      totalPages = 1 // Para que el frontend muestre "página 1 de 1" aunque no haya resultados
+      totalPages = 1
     }
 
     let finalPageNumber = pageNumber
@@ -146,53 +129,11 @@ export const getAllDisenios = async (req, res) => {
       disenios: diseniosParaPaginaActual,
       currentPage: finalPageNumber,
       totalPages,
-      totalDisenios // Este es el total DESPUÉS de todos los filtros (búsqueda y categoría)
+      totalDisenios
     })
   } catch (error) {
     console.error('Error al obtener diseños:', error)
     return res.status(500).json({ message: 'Error interno del servidor.' })
-  }
-}
-
-export const getPreviewSocialMedia = async (req, res) => {
-  try {
-    const disenio = await filtrarDiseniosConFiltros(req.query)
-
-    const title = disenio?.nombre || 'Explora diseños de uñas'
-    const description =
-      disenio?.descripcion ||
-      'Encuentra los mejores diseños de uñas personalizados.'
-    const image =
-      'https://res.cloudinary.com/drdkb6gjx/image/upload/v1724088857/cld-sample-5.jpg'
-    const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`
-
-    res.setHeader('Content-Type', 'text/html')
-    res.send(`
-      <!DOCTYPE html>
-      <html lang="es">
-        <head>
-          <meta charset="UTF-8" />
-          <title>${title}</title>
-          <meta property="og:title" content="${title}" />
-          <meta property="og:description" content="${description}" />
-          <meta property="og:image" content="${image}" />
-          <meta property="og:url" content="${url}" />
-          <meta name="twitter:card" content="summary_large_image" />
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
-        </head>
-        <body>
-          <script>
-            // Redirige a la app real
-            window.location.href = "/explorar-unas${decodeURIComponent(
-              location.search
-            )}"
-          </script>
-        </body>
-      </html>
-    `)
-  } catch (error) {
-    console.error(error)
-    res.status(500).send('Error generando vista previa.')
   }
 }
 

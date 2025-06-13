@@ -1,6 +1,8 @@
 import express from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import authRoutes from './routes/auth.routes.js'
 import categoriasRoutes from './routes/categorias.routes.js'
 import diseniosRoutes from './routes/disenios.routes.js'
@@ -10,11 +12,11 @@ import visitasRoutes from './routes/visitas.routes.js'
 import dashboardRoutes from './routes/dashboard.routes.js'
 import siteUploadsRoutes from './routes/siteUploads.routes.js'
 import textosColoresRoutes from './routes/textosColores.routes.js'
-import citasRoutes from './routes/citas.routes.js' // NUEVA RUTA DE CITAS
-// adminRoutes no se usa directamente si las funcionalidades de admin están en sus propios módulos (usuarios, disenios, etc.)
-// import adminRoutes from './routes/admin.routes.js';
+import citasRoutes from './routes/citas.routes.js'
 import dotenv from 'dotenv'
 import { getDb } from './database/connection.js'
+import { generatePreview } from './controllers/preview.controller.js'
+
 dotenv.config()
 
 const app = express()
@@ -64,7 +66,26 @@ app.use(
 
 app.use(cookieParser())
 
+const botUserAgents = [
+  'facebookexternalhit',
+  'Twitterbot',
+  'WhatsApp',
+  'TelegramBot',
+  'Pinterest',
+  'LinkedInBot',
+  'Discordbot'
+]
+
 app.use(async (req, res, next) => {
+  const userAgent = req.headers['user-agent'] || ''
+  const isBot = botUserAgents.some((bot) =>
+    userAgent.toLowerCase().includes(bot.toLowerCase())
+  )
+
+  if (isBot && (req.path === '/explorar-unas' || req.path === '/')) {
+    return generatePreview(req, res)
+  }
+
   if (req.path.startsWith('/api/')) {
     try {
       const db = await getDb()
@@ -93,11 +114,23 @@ app.use('/api/textos-colores', textosColoresRoutes)
 app.use('/api/visitas', visitasRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/site-uploads', siteUploadsRoutes)
-app.use('/api/citas', citasRoutes) // USO DE NUEVA RUTA DE CITAS
-// app.use('/api/admin', adminRoutes);
+app.use('/api/citas', citasRoutes)
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' })
+})
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const reactAppPath = path.join(__dirname, '../ui-naye/dist')
+
+app.use(express.static(reactAppPath))
+
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ message: 'Endpoint no encontrado.' })
+  }
+  res.sendFile(path.join(reactAppPath, 'index.html'))
 })
 
 app.use((err, req, res, next) => {

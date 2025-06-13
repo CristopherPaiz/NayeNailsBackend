@@ -5,21 +5,16 @@ import {
   createDisenio,
   updateDisenio,
   toggleActivoDisenio,
-  deleteDisenio,
-  getPreviewSocialMedia
+  deleteDisenio
 } from '../controllers/disenios.controller.js'
 import { authMiddleware } from '../middlewares/auth.js'
-import { handleUpload } from '../middlewares/upload.middleware.js' // Importar middleware
+import { handleUpload } from '../middlewares/upload.middleware.js'
 
 const diseniosRoutes = express.Router()
 
-// Ruta pública para explorar diseños
 diseniosRoutes.get('/', getAllDisenios)
-diseniosRoutes.get('/preview', getPreviewSocialMedia)
 
-// Rutas de Admin (protegidas)
 diseniosRoutes.get('/admin', authMiddleware, getAllDiseniosAdmin)
-// Aplicar middleware de subida para crear y actualizar
 diseniosRoutes.post(
   '/',
   authMiddleware,

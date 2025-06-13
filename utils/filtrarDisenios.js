@@ -1,3 +1,6 @@
+import { getDb } from '../database/connection.js'
+import { toSlug } from './textUtils.js'
+
 export const filtrarDiseniosConFiltros = async (filters) => {
   const { search = '', ...categoryFilters } = filters
 
