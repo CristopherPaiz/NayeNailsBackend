@@ -14,6 +14,7 @@ const diseniosRoutes = express.Router()
 
 // Ruta pública para explorar diseños
 diseniosRoutes.get('/', getAllDisenios)
+diseniosRoutes.get('/preview', getPreviewSocialMedia)
 
 // Rutas de Admin (protegidas)
 diseniosRoutes.get('/admin', authMiddleware, getAllDiseniosAdmin)

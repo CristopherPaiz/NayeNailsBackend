@@ -1,6 +1,7 @@
 import { getDb } from '../database/connection.js'
 import { toSlug } from '../utils/textUtils.js'
 import { deleteCloudinaryImage } from '../middlewares/upload.middleware.js'
+import { filtrarDiseniosConFiltros } from '../utils/filtrarDisenios.js'
 
 export const getAllDisenios = async (req, res) => {
   const { page = 1, limit = 10, search = '', ...categoryFilters } = req.query
@@ -150,6 +151,49 @@ export const getAllDisenios = async (req, res) => {
   } catch (error) {
     console.error('Error al obtener diseños:', error)
     return res.status(500).json({ message: 'Error interno del servidor.' })
+  }
+}
+
+export const getPreviewSocialMedia = async (req, res) => {
+  try {
+    const disenio = await filtrarDiseniosConFiltros(req.query)
+
+    const title = disenio?.nombre || 'Explora diseños de uñas'
+    const description =
+      disenio?.descripcion ||
+      'Encuentra los mejores diseños de uñas personalizados.'
+    const image =
+      disenio?.imagen_url ||
+      'https://www.shutterstock.com/image-photo/blue-pink-nail-polish-on-260nw-236859715.jpg'
+    const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`
+
+    res.setHeader('Content-Type', 'text/html')
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="es">
+        <head>
+          <meta charset="UTF-8" />
+          <title>${title}</title>
+          <meta property="og:title" content="${title}" />
+          <meta property="og:description" content="${description}" />
+          <meta property="og:image" content="${image}" />
+          <meta property="og:url" content="${url}" />
+          <meta name="twitter:card" content="summary_large_image" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+        </head>
+        <body>
+          <script>
+            // Redirige a la app real
+            window.location.href = "/explorar-unas${decodeURIComponent(
+              location.search
+            )}"
+          </script>
+        </body>
+      </html>
+    `)
+  } catch (error) {
+    console.error(error)
+    res.status(500).send('Error generando vista previa.')
   }
 }
 
