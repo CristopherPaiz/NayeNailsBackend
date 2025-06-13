@@ -103,7 +103,6 @@ export const generateHomePreview = async (req, res) => {
     const description =
       config?.slogan_negocio || 'Donde la perfeccion es el estándar'
     const image =
-      config?.logo_negocio_url ||
       'https://res.cloudinary.com/drdkb6gjx/image/upload/v1749846073/jc8udap3bfxjvwuxabxm.jpg'
 
     return renderHtml(res, title, description, image, fullUrl)
