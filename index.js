@@ -53,7 +53,6 @@ app.use(
     allowedHeaders: ['Content-Type', 'Authorization']
   })
 )
-
 app.use(
   express.json({
     verify: (req, res, buf, encoding) => {
