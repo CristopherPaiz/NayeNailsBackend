@@ -94,17 +94,18 @@ export const generateHomePreview = async (req, res) => {
   const fullUrl = `${frontendUrl}${req.originalUrl}`
   try {
     const db = await getDb()
-    const {
-      rows: [config]
-    } = await db.execute(
+    const { rows } = await db.execute(
       'SELECT nombre_negocio, slogan_negocio, logo_negocio_url FROM TextosColoresConfiguraciones WHERE id = 1'
     )
+    const config = rows[0]
+
     const title = config?.nombre_negocio || 'Naye Nails'
     const description =
       config?.slogan_negocio || 'Donde la perfeccion es el estándar'
     const image =
       config?.logo_negocio_url ||
       'https://res.cloudinary.com/drdkb6gjx/image/upload/v1749846073/jc8udap3bfxjvwuxabxm.jpg'
+
     return renderHtml(res, title, description, image, fullUrl)
   } catch (error) {
     console.error('Error generando preview para Home:', error)
@@ -119,7 +120,7 @@ export const generateDefaultPreview = (req, res) => {
   const defaultDescription =
     'Descubre el arte en tus uñas. Diseños personalizados, colores vibrantes y las últimas tendencias.'
   const defaultImage =
-    'https://res.cloudinary.com/drdkb6gjx/image/upload/v1749846073/jc8udap3bfxjvwuxabxm.jpgg'
+    'https://res.cloudinary.com/drdkb6gjx/image/upload/v1749846073/jc8udap3bfxjvwuxabxm.jpg'
   return renderHtml(
     res,
     defaultTitle,
