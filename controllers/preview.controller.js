@@ -29,8 +29,9 @@ export const generatePreview = async (req, res) => {
       'Encuentra tu inspiración en nuestra galería de diseños de uñas. Diseños personalizados, colores vibrantes y las últimas tendencias te esperan.'
     const defaultImage =
       'https://res.cloudinary.com/drdkb6gjx/image/upload/v1724088857/cld-sample-5.jpg'
-    const siteUrl = `${req.protocol}://${req.get('host')}`
-    const fullUrl = `${siteUrl}${req.originalUrl}`
+
+    const frontendUrl = process.env.FRONTEND_URL.replace(/\/$/, '')
+    const fullUrl = `${frontendUrl}${req.originalUrl}`
 
     const title = disenio?.nombre
       ? `${disenio.nombre} | Naye Nails`
@@ -65,9 +66,7 @@ export const generatePreview = async (req, res) => {
           <p>Serás redirigido en un momento...</p>
           <script>
             setTimeout(function() {
-              window.location.href = "${process.env.FRONTEND_URL || '/'}${
-      req.originalUrl
-    }";
+              window.location.href = "${fullUrl}";
             }, 1000);
           </script>
         </body>

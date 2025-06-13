@@ -65,16 +65,6 @@ app.use(
 
 app.use(cookieParser())
 
-const botUserAgents = [
-  'facebookexternalhit',
-  'Twitterbot',
-  'WhatsApp',
-  'TelegramBot',
-  'Pinterest',
-  'LinkedInBot',
-  'Discordbot'
-]
-
 app.use('/api', async (req, res, next) => {
   try {
     const db = await getDb()
@@ -107,19 +97,7 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' })
 })
 
-app.get('*', (req, res) => {
-  const userAgent = req.headers['user-agent'] || ''
-  const isBot = botUserAgents.some((bot) =>
-    userAgent.toLowerCase().includes(bot.toLowerCase())
-  )
-
-  if (isBot) {
-    return generatePreview(req, res)
-  } else {
-    const redirectUrl = `${process.env.FRONTEND_URL}${req.originalUrl}`
-    return res.redirect(302, redirectUrl)
-  }
-})
+app.get('*', generatePreview)
 
 app.use((err, req, res, next) => {
   console.error('Error en la aplicación:', err.message, err.stack)
