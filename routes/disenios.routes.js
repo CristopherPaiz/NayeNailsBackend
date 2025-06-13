@@ -5,7 +5,8 @@ import {
   createDisenio,
   updateDisenio,
   toggleActivoDisenio,
-  deleteDisenio
+  deleteDisenio,
+  getPreviewSocialMedia
 } from '../controllers/disenios.controller.js'
 import { authMiddleware } from '../middlewares/auth.js'
 import { handleUpload } from '../middlewares/upload.middleware.js' // Importar middleware
