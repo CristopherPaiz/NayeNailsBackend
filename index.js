@@ -1,8 +1,6 @@
 import express from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
-import path from 'path'
-import { fileURLToPath } from 'url'
 import authRoutes from './routes/auth.routes.js'
 import categoriasRoutes from './routes/categorias.routes.js'
 import diseniosRoutes from './routes/disenios.routes.js'
@@ -25,7 +23,8 @@ const port = process.env.PORT ?? 3000
 const requiredEnvVars = [
   'TURSO_DATABASE_URL',
   'TURSO_AUTH_TOKEN',
-  'JWT_SECRET_KEY'
+  'JWT_SECRET_KEY',
+  'FRONTEND_URL'
 ]
 const missingVars = requiredEnvVars.filter((varName) => !process.env[varName])
 
@@ -76,31 +75,19 @@ const botUserAgents = [
   'Discordbot'
 ]
 
-app.use(async (req, res, next) => {
-  const userAgent = req.headers['user-agent'] || ''
-  const isBot = botUserAgents.some((bot) =>
-    userAgent.toLowerCase().includes(bot.toLowerCase())
-  )
-
-  if (isBot && (req.path === '/explorar-unas' || req.path === '/')) {
-    return generatePreview(req, res)
-  }
-
-  if (req.path.startsWith('/api/')) {
-    try {
-      const db = await getDb()
-      if (!db) {
-        return res.status(503).json({
-          message:
-            'Base de datos no disponible temporalmente. Intente más tarde.'
-        })
-      }
-    } catch (dbError) {
-      console.error('Error crítico al obtener la instancia de BD:', dbError)
+app.use('/api', async (req, res, next) => {
+  try {
+    const db = await getDb()
+    if (!db) {
       return res.status(503).json({
-        message: 'Error crítico con la base de datos. Intente más tarde.'
+        message: 'Base de datos no disponible temporalmente. Intente más tarde.'
       })
     }
+  } catch (dbError) {
+    console.error('Error crítico al obtener la instancia de BD:', dbError)
+    return res.status(503).json({
+      message: 'Error crítico con la base de datos. Intente más tarde.'
+    })
   }
   next()
 })
@@ -120,17 +107,18 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' })
 })
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const reactAppPath = path.join(__dirname, '../ui-naye/dist')
-
-app.use(express.static(reactAppPath))
-
 app.get('*', (req, res) => {
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).json({ message: 'Endpoint no encontrado.' })
+  const userAgent = req.headers['user-agent'] || ''
+  const isBot = botUserAgents.some((bot) =>
+    userAgent.toLowerCase().includes(bot.toLowerCase())
+  )
+
+  if (isBot) {
+    return generatePreview(req, res)
+  } else {
+    const redirectUrl = `${process.env.FRONTEND_URL}${req.originalUrl}`
+    return res.redirect(302, redirectUrl)
   }
-  res.sendFile(path.join(reactAppPath, 'index.html'))
 })
 
 app.use((err, req, res, next) => {
