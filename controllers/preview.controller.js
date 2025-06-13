@@ -1,8 +1,28 @@
+import { getDb } from '../database/connection.js'
 import { filtrarDiseniosConFiltros } from '../utils/filtrarDisenios.js'
 
 export const generatePreview = async (req, res) => {
   try {
-    const disenio = await filtrarDiseniosConFiltros(req.query)
+    const db = await getDb()
+    if (!db) {
+      return res.status(503).send('Servicio no disponible temporalmente.')
+    }
+
+    let disenio
+    const diseniosFiltrados = await filtrarDiseniosConFiltros(req.query)
+
+    if (diseniosFiltrados && diseniosFiltrados.length > 0) {
+      const randomIndex = Math.floor(Math.random() * diseniosFiltrados.length)
+      disenio = diseniosFiltrados[randomIndex]
+    } else {
+      const { rows: randomDisenio } = await db.execute({
+        sql: 'SELECT nombre, descripcion, imagen_url FROM Disenios WHERE activo = 1 ORDER BY RANDOM() LIMIT 1',
+        args: []
+      })
+      if (randomDisenio.length > 0) {
+        disenio = randomDisenio[0]
+      }
+    }
 
     const defaultTitle = 'Explora Diseños de Uñas Increíbles | Naye Nails'
     const defaultDescription =
@@ -42,6 +62,14 @@ export const generatePreview = async (req, res) => {
           <h1>${title}</h1>
           <p>${description}</p>
           <img src="${image}" alt="${title}" style="max-width: 100%; height: auto;" />
+          <p>Serás redirigido en un momento...</p>
+          <script>
+            setTimeout(function() {
+              window.location.href = "${process.env.FRONTEND_URL || '/'}${
+      req.originalUrl
+    }";
+            }, 1000);
+          </script>
         </body>
       </html>
     `)

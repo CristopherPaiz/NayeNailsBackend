@@ -77,5 +77,5 @@ export const filtrarDiseniosConFiltros = async (filters) => {
     })
   })
 
-  return diseniosFiltrados[0] || null
+  return diseniosFiltrados
 }
