@@ -97,6 +97,7 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' })
 })
 
+app.get('/explorar-unas/:id', generatePreview)
 app.get('*', generatePreview)
 
 app.use((err, req, res, next) => {
