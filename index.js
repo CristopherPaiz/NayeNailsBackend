@@ -46,6 +46,7 @@ app.use(
     origin: [
       'http://localhost:5173',
       'https://nayenails.netlify.app',
+      'https://nayenails.com',
       process.env.FRONTEND_URL
     ].filter(Boolean),
     credentials: true,
@@ -100,12 +101,10 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' })
 })
 
-// Rutas explícitas para las vistas previas
 app.get('/', generateHomePreview)
 app.get('/explorar-unas/:id', generatePreview)
 app.get('/explorar-unas', generatePreview)
 
-// Fallback para cualquier otra ruta
 app.get('*', generateDefaultPreview)
 
 app.use((err, req, res, next) => {
