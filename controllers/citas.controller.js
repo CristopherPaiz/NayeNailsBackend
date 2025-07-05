@@ -270,3 +270,90 @@ export const actualizarEstadoCita = async (req, res) => {
       .json({ message: 'Error interno del servidor al actualizar la cita.' })
   }
 }
+
+
+export const crearCitaAdmin = async (req, res) => {
+  const {
+    nombre_cliente,
+    telefono_cliente,
+    fecha_cita,
+    hora_cita,
+    id_subcategoria_servicio,
+    notas
+  } = req.body
+
+  if (
+    !nombre_cliente ||
+    !telefono_cliente ||
+    !fecha_cita ||
+    !hora_cita ||
+    !id_subcategoria_servicio
+  ) {
+    return res
+      .status(400)
+      .json({ message: 'Todos los campos son obligatorios.' })
+  }
+
+  try {
+    const db = await getDb()
+    if (!db)
+      return res.status(503).json({ message: 'Base de datos no disponible.' })
+
+    // Validar que el servicio (subcategoría) existe y está activo
+    const { rows: subcategorias } = await db.execute({
+      sql: 'SELECT id FROM Subcategorias WHERE id = ? AND activo = 1',
+      args: [id_subcategoria_servicio]
+    })
+
+    if (subcategorias.length === 0) {
+      return res.status(400).json({
+        message: 'El servicio seleccionado no es válido o no está disponible.'
+      })
+    }
+
+    // Como el admin la crea, la marcamos como confirmada y aceptada por defecto
+    const result = await db.execute({
+      sql: 'INSERT INTO Citas (nombre_cliente, telefono_cliente, fecha_cita, hora_cita, id_subcategoria_servicio, notas, estado, aceptada) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      args: [
+        nombre_cliente,
+        telefono_cliente,
+        fecha_cita,
+        hora_cita,
+        id_subcategoria_servicio,
+        notas ?? null,
+        'confirmada', // Estado por defecto para citas de admin
+        1 // Aceptada por defecto
+      ]
+    })
+
+    const citaId = result?.lastInsertRowid
+      ? Number(result.lastInsertRowid)
+      : null
+
+    if (!citaId) {
+      return res
+        .status(500)
+        .json({ message: 'Error al crear la cita, no se obtuvo ID.' })
+    }
+
+    // Devolver la cita recién creada
+    const {
+      rows: [nuevaCita]
+    } = await db.execute({
+      sql: 'SELECT * FROM Citas WHERE id = ?',
+      args: [citaId]
+    })
+
+    return res
+      .status(201)
+      .json({
+        message: 'Cita creada exitosamente por el administrador.',
+        cita: nuevaCita
+      })
+  } catch (error) {
+    console.error('Error al crear cita desde admin:', error)
+    return res
+      .status(500)
+      .json({ message: 'Error interno del servidor al crear la cita.' })
+  }
+}

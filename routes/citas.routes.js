@@ -2,7 +2,8 @@ import express from 'express'
 import {
   crearCita,
   obtenerCitasAdmin,
-  actualizarEstadoCita
+  actualizarEstadoCita,
+  crearCitaAdmin
 } from '../controllers/citas.controller.js'
 import { authMiddleware } from '../middlewares/auth.js'
 
@@ -13,6 +14,7 @@ citasRoutes.post('/', crearCita)
 
 // Rutas protegidas para el administrador
 citasRoutes.get('/admin', authMiddleware, obtenerCitasAdmin)
+citasRoutes.post('/admin', authMiddleware, crearCitaAdmin)
 citasRoutes.patch('/admin/:id/estado', authMiddleware, actualizarEstadoCita) // PATCH para actualizaciones parciales
 
 export default citasRoutes
