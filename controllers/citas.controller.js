@@ -127,15 +127,18 @@ export const obtenerCitasAdmin = async (req, res) => {
   }
 }
 
-// Actualizar estado de una cita (aceptada, reagendar)
-export const actualizarEstadoCita = async (req, res) => {
+// Actualizar cualquier campo de una cita
+export const updateCita = async (req, res) => {
   const { id } = req.params
   const {
-    aceptada,
+    nombre_cliente,
+    telefono_cliente,
     fecha_cita,
     hora_cita,
+    id_subcategoria_servicio,
     notas,
-    estado: nuevoEstadoPropuesto
+    aceptada, // Este valor vendrá del frontend
+    estado: nuevoEstadoPropuesto // Para flexibilidad
   } = req.body
 
   try {
@@ -156,20 +159,58 @@ export const actualizarEstadoCita = async (req, res) => {
 
     const updates = []
     const args = []
-    let estadoFinal = citaExistente.estado // Por defecto, mantener el estado actual
 
-    if (typeof aceptada !== 'undefined') {
-      updates.push('aceptada = ?')
-      args.push(aceptada ? 1 : 0)
-      // Actualizar estado basado en 'aceptada' si no se provee un 'nuevoEstadoPropuesto' específico
-      if (!nuevoEstadoPropuesto) {
-        estadoFinal = aceptada ? 'confirmada' : 'pendiente'
-      }
+    // Actualizar campos estándar si se proporcionan
+    if (nombre_cliente) {
+      updates.push('nombre_cliente = ?')
+      args.push(nombre_cliente)
+    }
+    if (telefono_cliente) {
+      updates.push('telefono_cliente = ?')
+      args.push(telefono_cliente)
+    }
+    if (fecha_cita) {
+      updates.push('fecha_cita = ?')
+      args.push(fecha_cita)
+    }
+    if (hora_cita) {
+      updates.push('hora_cita = ?')
+      args.push(hora_cita)
+    }
+    if (id_subcategoria_servicio) {
+      updates.push('id_subcategoria_servicio = ?')
+      args.push(id_subcategoria_servicio)
+    }
+    if (typeof notas !== 'undefined') {
+      updates.push('notas = ?')
+      args.push(notas)
     }
 
-    if (nuevoEstadoPropuesto) {
-      // Si se envía un estado específico, usarlo
-      // Validar que el nuevoEstadoPropuesto sea uno de los permitidos
+    // Lógica mejorada para 'aceptada' y 'estado'
+    if (typeof aceptada !== 'undefined') {
+      const isAccepted = aceptada ? 1 : 0
+      updates.push('aceptada = ?')
+      args.push(isAccepted)
+
+      // Determinar estado basado en 'aceptada', a menos que se proporcione un estado específico
+      let estadoFinal = isAccepted ? 'confirmada' : 'pendiente'
+      const estadosValidos = [
+        'pendiente',
+        'confirmada',
+        'cancelada',
+        'completada',
+        'atendida'
+      ]
+      if (
+        nuevoEstadoPropuesto &&
+        estadosValidos.includes(nuevoEstadoPropuesto)
+      ) {
+        estadoFinal = nuevoEstadoPropuesto
+      }
+      updates.push('estado = ?')
+      args.push(estadoFinal)
+    } else if (nuevoEstadoPropuesto) {
+      // Manejar cambio de estado sin cambiar 'aceptada'
       const estadosValidos = [
         'pendiente',
         'confirmada',
@@ -178,53 +219,9 @@ export const actualizarEstadoCita = async (req, res) => {
         'atendida'
       ]
       if (estadosValidos.includes(nuevoEstadoPropuesto)) {
-        estadoFinal = nuevoEstadoPropuesto
-      } else {
-        // Si no es válido, no cambiar el estado o manejar error.
-        // Por ahora, no lo cambiaremos si no es válido y no se cambió por 'aceptada'.
-        console.warn(
-          `Estado propuesto '${nuevoEstadoPropuesto}' no es válido. Se mantendrá '${estadoFinal}'.`
-        )
-      }
-    }
-
-    // Solo añadir el estado a 'updates' si realmente cambió o si se está actualizando 'aceptada'
-    if (
-      estadoFinal !== citaExistente.estado ||
-      typeof aceptada !== 'undefined'
-    ) {
-      updates.push('estado = ?')
-      args.push(estadoFinal)
-    }
-
-    if (fecha_cita) {
-      updates.push('fecha_cita = ?')
-      args.push(fecha_cita)
-      // Si se reagenda, volver a pendiente y no aceptada
-      if (!updates.includes('estado = ?')) {
-        // Evitar duplicar si ya se añadió por 'aceptada' o 'nuevoEstadoPropuesto'
         updates.push('estado = ?')
-        args.push('pendiente')
-      } else {
-        // Si ya está, asegurarse que sea 'pendiente'
-        const estadoIndex = updates.indexOf('estado = ?')
-        args[estadoIndex] = 'pendiente'
+        args.push(nuevoEstadoPropuesto)
       }
-      if (!updates.includes('aceptada = ?')) {
-        updates.push('aceptada = ?')
-        args.push(0)
-      } else {
-        const aceptadaIndex = updates.indexOf('aceptada = ?')
-        args[aceptadaIndex] = 0
-      }
-    }
-    if (hora_cita) {
-      updates.push('hora_cita = ?')
-      args.push(hora_cita)
-    }
-    if (typeof notas !== 'undefined') {
-      updates.push('notas = ?')
-      args.push(notas)
     }
 
     if (updates.length === 0) {
@@ -259,7 +256,6 @@ export const actualizarEstadoCita = async (req, res) => {
     })
   } catch (error) {
     console.error('Error al actualizar cita:', error)
-    // Devolver el mensaje de error de SQLite si es una violación de constraint
     if (error.code === 'SQLITE_CONSTRAINT') {
       return res
         .status(400)
@@ -271,6 +267,32 @@ export const actualizarEstadoCita = async (req, res) => {
   }
 }
 
+// Eliminar una cita
+export const deleteCita = async (req, res) => {
+  const { id } = req.params
+
+  try {
+    const db = await getDb()
+    if (!db)
+      return res.status(503).json({ message: 'Base de datos no disponible.' })
+
+    const { rowsAffected } = await db.execute({
+      sql: 'DELETE FROM Citas WHERE id = ?',
+      args: [id]
+    })
+
+    if (rowsAffected === 0) {
+      return res.status(404).json({ message: 'Cita no encontrada.' })
+    }
+
+    return res.status(200).json({ message: 'Cita eliminada exitosamente.' })
+  } catch (error) {
+    console.error('Error al eliminar cita:', error)
+    return res
+      .status(500)
+      .json({ message: 'Error interno del servidor al eliminar la cita.' })
+  }
+}
 
 export const crearCitaAdmin = async (req, res) => {
   const {
@@ -344,12 +366,10 @@ export const crearCitaAdmin = async (req, res) => {
       args: [citaId]
     })
 
-    return res
-      .status(201)
-      .json({
-        message: 'Cita creada exitosamente por el administrador.',
-        cita: nuevaCita
-      })
+    return res.status(201).json({
+      message: 'Cita creada exitosamente por el administrador.',
+      cita: nuevaCita
+    })
   } catch (error) {
     console.error('Error al crear cita desde admin:', error)
     return res
