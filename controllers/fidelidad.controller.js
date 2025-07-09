@@ -158,10 +158,11 @@ export const editarVisitas = async (req, res) => {
   const { id } = req.params
   const { visitas } = req.body
 
-  if (typeof visitas !== 'number' || visitas < 0 || visitas > 5) {
+  // CAMBIO: El número de visitas debe ser entre 0 y 4.
+  if (typeof visitas !== 'number' || visitas < 0 || visitas > 4) {
     return res
       .status(400)
-      .json({ message: 'El número de visitas debe ser entre 0 y 5.' })
+      .json({ message: 'El número de visitas debe ser entre 0 y 4.' })
   }
 
   try {
@@ -180,7 +181,8 @@ export const editarVisitas = async (req, res) => {
       return res.status(404).json({ message: 'Tarjeta no encontrada.' })
     }
 
-    if (tarjetaActual.canje_disponible === 1 && visitas < 5) {
+    // CAMBIO: La condición para reducir visitas es ahora sobre 4
+    if (tarjetaActual.canje_disponible === 1 && visitas < 4) {
       return res.status(400).json({
         message:
           'No se puede reducir las visitas si hay un canje disponible. Primero canjee el premio.'
@@ -189,7 +191,8 @@ export const editarVisitas = async (req, res) => {
 
     const stmts = []
     const visitasAnteriores = tarjetaActual.visitas_acumuladas
-    const canjeDisponible = visitas === 5 ? 1 : 0
+    // CAMBIO: El canje se activa cuando las visitas son igual a 4
+    const canjeDisponible = visitas === 4 ? 1 : 0
 
     let sqlUpdate =
       'UPDATE TarjetasFidelidad SET visitas_acumuladas = ?, canje_disponible = ?'
