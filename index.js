@@ -9,6 +9,7 @@ import configuracionesRoutes from './routes/configuraciones.routes.js'
 import visitasRoutes from './routes/visitas.routes.js'
 import dashboardRoutes from './routes/dashboard.routes.js'
 import siteUploadsRoutes from './routes/siteUploads.routes.js'
+import fidelidadRoutes from './routes/fidelidad.routes.js'
 import textosColoresRoutes from './routes/textosColores.routes.js'
 import citasRoutes from './routes/citas.routes.js'
 import dotenv from 'dotenv'
@@ -96,6 +97,7 @@ app.use('/api/visitas', visitasRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/site-uploads', siteUploadsRoutes)
 app.use('/api/citas', citasRoutes)
+app.use('/api/fidelidad', fidelidadRoutes)
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' })
