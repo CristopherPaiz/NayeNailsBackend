@@ -64,7 +64,8 @@ export const getEstadisticasDashboard = async (req, res) => {
       sql: `
         SELECT s.nombre as nombre_subcategoria, cp.nombre as nombre_categoria_padre, COUNT(c.id) as total_citas
         FROM Citas c
-        JOIN Subcategorias s ON c.id_subcategoria_servicio = s.id
+        JOIN CitaServicios cs ON c.id = cs.id_cita
+        JOIN Subcategorias s ON cs.id_subcategoria = s.id
         JOIN CategoriasPadre cp ON s.id_categoria_padre = cp.id
         WHERE c.fecha_cita >= date('now', '-30 days') AND c.fecha_cita <= date('now')
         GROUP BY s.id, s.nombre, cp.nombre

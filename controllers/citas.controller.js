@@ -1,13 +1,12 @@
 import { getDb } from '../database/connection.js'
 
-// Crear una nueva cita
 export const crearCita = async (req, res) => {
   const {
     nombre_cliente,
     telefono_cliente,
     fecha_cita,
     hora_cita,
-    id_subcategoria_servicio,
+    servicios_ids,
     notas
   } = req.body
 
@@ -16,11 +15,14 @@ export const crearCita = async (req, res) => {
     !telefono_cliente ||
     !fecha_cita ||
     !hora_cita ||
-    !id_subcategoria_servicio
+    !servicios_ids ||
+    !Array.isArray(servicios_ids) ||
+    servicios_ids.length === 0
   ) {
-    return res
-      .status(400)
-      .json({ message: 'Todos los campos marcados con * son obligatorios.' })
+    return res.status(400).json({
+      message:
+        'Todos los campos marcados con * son obligatorios y debe seleccionar al menos un servicio.'
+    })
   }
 
   try {
@@ -28,33 +30,34 @@ export const crearCita = async (req, res) => {
     if (!db)
       return res.status(503).json({ message: 'Base de datos no disponible.' })
 
+    const placeholders = servicios_ids.map(() => '?').join(',')
     const { rows: subcategorias } = await db.execute({
-      sql: 'SELECT id FROM Subcategorias WHERE id = ? AND activo = 1',
-      args: [id_subcategoria_servicio]
+      sql: `SELECT id FROM Subcategorias WHERE id IN (${placeholders}) AND activo = 1`,
+      args: servicios_ids
     })
 
-    if (subcategorias.length === 0) {
+    if (subcategorias.length !== servicios_ids.length) {
       return res.status(400).json({
-        message: 'El servicio seleccionado no es válido o no está disponible.'
+        message:
+          'Uno o más de los servicios seleccionados no son válidos o no están disponibles.'
       })
     }
 
-    const result = await db.execute({
-      sql: 'INSERT INTO Citas (nombre_cliente, telefono_cliente, fecha_cita, hora_cita, id_subcategoria_servicio, notas, estado, aceptada) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    const citaResult = await db.execute({
+      sql: 'INSERT INTO Citas (nombre_cliente, telefono_cliente, fecha_cita, hora_cita, notas, estado, aceptada) VALUES (?, ?, ?, ?, ?, ?, ?)',
       args: [
         nombre_cliente,
         telefono_cliente,
         fecha_cita,
         hora_cita,
-        id_subcategoria_servicio,
         notas ?? null,
         'pendiente',
         0
       ]
     })
 
-    const citaId = result?.lastInsertRowid
-      ? Number(result.lastInsertRowid)
+    const citaId = citaResult?.lastInsertRowid
+      ? Number(citaResult.lastInsertRowid)
       : null
 
     if (!citaId) {
@@ -62,6 +65,13 @@ export const crearCita = async (req, res) => {
         .status(500)
         .json({ message: 'Error al crear la cita, no se obtuvo ID.' })
     }
+
+    const stmts = servicios_ids.map((servicioId) => ({
+      sql: 'INSERT INTO CitaServicios (id_cita, id_subcategoria) VALUES (?, ?)',
+      args: [citaId, servicioId]
+    }))
+
+    await db.batch(stmts, 'write')
 
     return res
       .status(201)
@@ -74,7 +84,6 @@ export const crearCita = async (req, res) => {
   }
 }
 
-// Obtener citas para el admin
 export const obtenerCitasAdmin = async (req, res) => {
   const { mes, anio, fecha } = req.query
 
@@ -88,11 +97,14 @@ export const obtenerCitasAdmin = async (req, res) => {
         c.id, c.nombre_cliente, c.telefono_cliente,
         STRFTIME('%Y-%m-%d', c.fecha_cita) as fecha_cita,
         c.hora_cita,
-        c.id_subcategoria_servicio, s.nombre as nombre_subcategoria, cp.nombre as nombre_categoria_padre,
         c.notas, c.estado, c.aceptada,
-        c.fecha_creacion, c.fecha_actualizacion
+        c.fecha_creacion, c.fecha_actualizacion,
+        GROUP_CONCAT(s.id) as servicios_ids,
+        GROUP_CONCAT(s.nombre) as servicios_nombres,
+        GROUP_CONCAT(cp.nombre) as categorias_padre_nombres
       FROM Citas c
-      LEFT JOIN Subcategorias s ON c.id_subcategoria_servicio = s.id
+      LEFT JOIN CitaServicios cs ON c.id = cs.id_cita
+      LEFT JOIN Subcategorias s ON cs.id_subcategoria = s.id
       LEFT JOIN CategoriasPadre cp ON s.id_categoria_padre = cp.id
     `
     const args = []
@@ -114,11 +126,36 @@ export const obtenerCitasAdmin = async (req, res) => {
       sql += ' WHERE ' + conditions.join(' AND ')
     }
 
+    sql += ' GROUP BY c.id'
     sql += ' ORDER BY c.fecha_cita ASC, c.hora_cita ASC'
 
     const { rows: citas } = await db.execute({ sql, args })
 
-    return res.status(200).json(citas)
+    const citasConServicios = citas.map((cita) => {
+      const servicios = []
+      if (
+        cita.servicios_ids &&
+        cita.servicios_nombres &&
+        cita.categorias_padre_nombres
+      ) {
+        const ids = cita.servicios_ids.split(',')
+        const nombres = cita.servicios_nombres.split(',')
+        const categoriasPadre = cita.categorias_padre_nombres.split(',')
+        for (let i = 0; i < ids.length; i++) {
+          servicios.push({
+            id: parseInt(ids[i], 10),
+            nombre: nombres[i],
+            categoria_padre: categoriasPadre[i]
+          })
+        }
+      }
+      delete cita.servicios_ids
+      delete cita.servicios_nombres
+      delete cita.categorias_padre_nombres
+      return { ...cita, servicios }
+    })
+
+    return res.status(200).json(citasConServicios)
   } catch (error) {
     console.error('Error al obtener citas para admin:', error)
     return res
@@ -127,7 +164,6 @@ export const obtenerCitasAdmin = async (req, res) => {
   }
 }
 
-// Actualizar cualquier campo de una cita
 export const updateCita = async (req, res) => {
   const { id } = req.params
   const {
@@ -135,10 +171,10 @@ export const updateCita = async (req, res) => {
     telefono_cliente,
     fecha_cita,
     hora_cita,
-    id_subcategoria_servicio,
+    servicios_ids,
     notas,
-    aceptada, // Este valor vendrá del frontend
-    estado: nuevoEstadoPropuesto // Para flexibilidad
+    aceptada,
+    estado: nuevoEstadoPropuesto
   } = req.body
 
   try {
@@ -160,7 +196,6 @@ export const updateCita = async (req, res) => {
     const updates = []
     const args = []
 
-    // Actualizar campos estándar si se proporcionan
     if (nombre_cliente) {
       updates.push('nombre_cliente = ?')
       args.push(nombre_cliente)
@@ -177,22 +212,15 @@ export const updateCita = async (req, res) => {
       updates.push('hora_cita = ?')
       args.push(hora_cita)
     }
-    if (id_subcategoria_servicio) {
-      updates.push('id_subcategoria_servicio = ?')
-      args.push(id_subcategoria_servicio)
-    }
     if (typeof notas !== 'undefined') {
       updates.push('notas = ?')
       args.push(notas)
     }
 
-    // Lógica mejorada para 'aceptada' y 'estado'
     if (typeof aceptada !== 'undefined') {
       const isAccepted = aceptada ? 1 : 0
       updates.push('aceptada = ?')
       args.push(isAccepted)
-
-      // Determinar estado basado en 'aceptada', a menos que se proporcione un estado específico
       let estadoFinal = isAccepted ? 'confirmada' : 'pendiente'
       const estadosValidos = [
         'pendiente',
@@ -210,7 +238,6 @@ export const updateCita = async (req, res) => {
       updates.push('estado = ?')
       args.push(estadoFinal)
     } else if (nuevoEstadoPropuesto) {
-      // Manejar cambio de estado sin cambiar 'aceptada'
       const estadosValidos = [
         'pendiente',
         'confirmada',
@@ -224,23 +251,28 @@ export const updateCita = async (req, res) => {
       }
     }
 
-    if (updates.length === 0) {
-      return res
-        .status(400)
-        .json({ message: 'No se proporcionaron datos para actualizar.' })
+    if (updates.length > 0) {
+      updates.push("fecha_actualizacion = STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')")
+      args.push(id)
+      const sql = `UPDATE Citas SET ${updates.join(', ')} WHERE id = ?`
+      await db.execute({ sql, args })
     }
 
-    updates.push("fecha_actualizacion = STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')")
-    args.push(id)
-
-    const sql = `UPDATE Citas SET ${updates.join(', ')} WHERE id = ?`
-
-    const { rowsAffected } = await db.execute({ sql, args })
-
-    if (rowsAffected === 0) {
-      return res
-        .status(404)
-        .json({ message: 'Cita no encontrada o no se pudo actualizar.' })
+    if (
+      servicios_ids &&
+      Array.isArray(servicios_ids) &&
+      servicios_ids.length > 0
+    ) {
+      const stmts = [
+        { sql: 'DELETE FROM CitaServicios WHERE id_cita = ?', args: [id] }
+      ]
+      servicios_ids.forEach((servicioId) => {
+        stmts.push({
+          sql: 'INSERT INTO CitaServicios (id_cita, id_subcategoria) VALUES (?, ?)',
+          args: [id, servicioId]
+        })
+      })
+      await db.batch(stmts, 'write')
     }
 
     const {
@@ -267,7 +299,6 @@ export const updateCita = async (req, res) => {
   }
 }
 
-// Eliminar una cita
 export const deleteCita = async (req, res) => {
   const { id } = req.params
 
@@ -300,7 +331,7 @@ export const crearCitaAdmin = async (req, res) => {
     telefono_cliente,
     fecha_cita,
     hora_cita,
-    id_subcategoria_servicio,
+    servicios_ids,
     notas
   } = req.body
 
@@ -309,11 +340,14 @@ export const crearCitaAdmin = async (req, res) => {
     !telefono_cliente ||
     !fecha_cita ||
     !hora_cita ||
-    !id_subcategoria_servicio
+    !servicios_ids ||
+    !Array.isArray(servicios_ids) ||
+    servicios_ids.length === 0
   ) {
-    return res
-      .status(400)
-      .json({ message: 'Todos los campos son obligatorios.' })
+    return res.status(400).json({
+      message:
+        'Todos los campos son obligatorios y debe seleccionar al menos un servicio.'
+    })
   }
 
   try {
@@ -321,35 +355,34 @@ export const crearCitaAdmin = async (req, res) => {
     if (!db)
       return res.status(503).json({ message: 'Base de datos no disponible.' })
 
-    // Validar que el servicio (subcategoría) existe y está activo
+    const placeholders = servicios_ids.map(() => '?').join(',')
     const { rows: subcategorias } = await db.execute({
-      sql: 'SELECT id FROM Subcategorias WHERE id = ? AND activo = 1',
-      args: [id_subcategoria_servicio]
+      sql: `SELECT id FROM Subcategorias WHERE id IN (${placeholders}) AND activo = 1`,
+      args: servicios_ids
     })
 
-    if (subcategorias.length === 0) {
+    if (subcategorias.length !== servicios_ids.length) {
       return res.status(400).json({
-        message: 'El servicio seleccionado no es válido o no está disponible.'
+        message:
+          'Uno o más de los servicios seleccionados no son válidos o no están disponibles.'
       })
     }
 
-    // Como el admin la crea, la marcamos como confirmada y aceptada por defecto
-    const result = await db.execute({
-      sql: 'INSERT INTO Citas (nombre_cliente, telefono_cliente, fecha_cita, hora_cita, id_subcategoria_servicio, notas, estado, aceptada) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    const citaResult = await db.execute({
+      sql: 'INSERT INTO Citas (nombre_cliente, telefono_cliente, fecha_cita, hora_cita, notas, estado, aceptada) VALUES (?, ?, ?, ?, ?, ?, ?)',
       args: [
         nombre_cliente,
         telefono_cliente,
         fecha_cita,
         hora_cita,
-        id_subcategoria_servicio,
         notas ?? null,
-        'confirmada', // Estado por defecto para citas de admin
-        1 // Aceptada por defecto
+        'confirmada',
+        1
       ]
     })
 
-    const citaId = result?.lastInsertRowid
-      ? Number(result.lastInsertRowid)
+    const citaId = citaResult?.lastInsertRowid
+      ? Number(citaResult.lastInsertRowid)
       : null
 
     if (!citaId) {
@@ -358,7 +391,13 @@ export const crearCitaAdmin = async (req, res) => {
         .json({ message: 'Error al crear la cita, no se obtuvo ID.' })
     }
 
-    // Devolver la cita recién creada
+    const stmts = servicios_ids.map((servicioId) => ({
+      sql: 'INSERT INTO CitaServicios (id_cita, id_subcategoria) VALUES (?, ?)',
+      args: [citaId, servicioId]
+    }))
+
+    await db.batch(stmts, 'write')
+
     const {
       rows: [nuevaCita]
     } = await db.execute({
