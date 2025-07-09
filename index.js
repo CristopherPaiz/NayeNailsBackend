@@ -48,6 +48,8 @@ app.use(
       'http://localhost:5173',
       'https://nayenails.netlify.app',
       'https://nayenails.com',
+      'https://www.nayenails.com',
+      'https://nayenailsbackend.onrender.com',
       process.env.FRONTEND_URL
     ].filter(Boolean),
     credentials: true,
