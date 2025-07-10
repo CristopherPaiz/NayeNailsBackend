@@ -6,20 +6,22 @@ import {
   obtenerTarjetaPorTelefono,
   editarVisitas,
   canjearTarjeta,
-  obtenerHistorialVisitas
+  obtenerHistorialVisitas,
+  updateTarjeta,
+  deleteTarjeta
 } from '../controllers/fidelidad.controller.js'
 import { authMiddleware } from '../middlewares/auth.js'
 
 const fidelidadRoutes = express.Router()
 
-// Rutas de Admin
 fidelidadRoutes.post('/', authMiddleware, registrarTarjeta)
 fidelidadRoutes.get('/', authMiddleware, obtenerTarjetas)
+fidelidadRoutes.put('/:id', authMiddleware, updateTarjeta)
+fidelidadRoutes.delete('/:id', authMiddleware, deleteTarjeta)
 fidelidadRoutes.put('/:id/visitas', authMiddleware, editarVisitas)
 fidelidadRoutes.post('/:id/canjear', authMiddleware, canjearTarjeta)
 fidelidadRoutes.get('/:id/historial', authMiddleware, obtenerHistorialVisitas)
 
-// Rutas Públicas
 fidelidadRoutes.get('/public/buscar', obtenerTarjetaPorTelefono)
 fidelidadRoutes.get('/public/:codigo', obtenerTarjetaPorCodigo)
 

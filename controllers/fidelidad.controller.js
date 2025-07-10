@@ -71,25 +71,56 @@ export const registrarTarjeta = async (req, res) => {
 }
 
 export const obtenerTarjetas = async (req, res) => {
-  const { search = '' } = req.query
+  const { search = '', page = 1, limit = 10 } = req.query
+  const pageNumber = parseInt(page, 10)
+  const limitNumber = parseInt(limit, 10)
+  const offset = (pageNumber - 1) * limitNumber
+  const searchTerm = search ? `%${search}%` : null
+
   try {
     const db = await getDb()
     if (!db)
       return res.status(503).json({ message: 'Base de datos no disponible.' })
 
-    let sql = 'SELECT * FROM TarjetasFidelidad'
-    const args = []
+    let cardsSql = 'SELECT * FROM TarjetasFidelidad'
+    let countSql = 'SELECT COUNT(*) as total FROM TarjetasFidelidad'
+    const whereClauses = []
+    const sqlArgs = []
+    const countArgs = []
 
-    if (search) {
-      sql += ' WHERE nombre_cliente LIKE ? OR telefono_cliente LIKE ?'
-      args.push(`%${search}%`, `%${search}%`)
+    if (searchTerm) {
+      whereClauses.push('(nombre_cliente LIKE ? OR telefono_cliente LIKE ?)')
+      sqlArgs.push(searchTerm, searchTerm)
+      countArgs.push(searchTerm, searchTerm)
     }
 
-    sql += ' ORDER BY fecha_creacion DESC'
+    if (whereClauses.length > 0) {
+      const whereString = ` WHERE ${whereClauses.join(' AND ')}`
+      cardsSql += whereString
+      countSql += whereString
+    }
 
-    const { rows } = await db.execute({ sql, args })
+    cardsSql += ' ORDER BY fecha_creacion DESC LIMIT ? OFFSET ?'
+    sqlArgs.push(limitNumber, offset)
 
-    return res.status(200).json(rows)
+    const { rows: tarjetas } = await db.execute({
+      sql: cardsSql,
+      args: sqlArgs
+    })
+    const { rows: countResult } = await db.execute({
+      sql: countSql,
+      args: countArgs
+    })
+
+    const totalTarjetas = countResult[0]?.total ?? 0
+    const totalPages = Math.ceil(totalTarjetas / limitNumber)
+
+    return res.status(200).json({
+      tarjetas,
+      currentPage: pageNumber,
+      totalPages,
+      totalTarjetas
+    })
   } catch (error) {
     console.error('Error al obtener tarjetas:', error)
     return res.status(500).json({ message: 'Error interno del servidor.' })
@@ -154,11 +185,56 @@ export const obtenerTarjetaPorTelefono = async (req, res) => {
   }
 }
 
+export const updateTarjeta = async (req, res) => {
+  const { id } = req.params
+  const { nombre_cliente, telefono_cliente } = req.body
+
+  if (!nombre_cliente || !telefono_cliente) {
+    return res
+      .status(400)
+      .json({ message: 'El nombre y el teléfono son obligatorios.' })
+  }
+
+  try {
+    const db = await getDb()
+    if (!db)
+      return res.status(503).json({ message: 'Base de datos no disponible.' })
+
+    const { rowsAffected } = await db.execute({
+      sql: 'UPDATE TarjetasFidelidad SET nombre_cliente = ?, telefono_cliente = ? WHERE id = ?',
+      args: [nombre_cliente, telefono_cliente, id]
+    })
+
+    if (rowsAffected === 0) {
+      return res.status(404).json({ message: 'Tarjeta no encontrada.' })
+    }
+
+    const {
+      rows: [tarjetaActualizada]
+    } = await db.execute({
+      sql: 'SELECT * FROM TarjetasFidelidad WHERE id = ?',
+      args: [id]
+    })
+
+    return res.status(200).json({
+      message: 'Tarjeta actualizada correctamente.',
+      tarjeta: tarjetaActualizada
+    })
+  } catch (error) {
+    console.error('Error al actualizar tarjeta:', error)
+    if (error.message?.includes('UNIQUE constraint failed')) {
+      return res
+        .status(409)
+        .json({ message: 'Ya existe una tarjeta con este número de teléfono.' })
+    }
+    return res.status(500).json({ message: 'Error interno del servidor.' })
+  }
+}
+
 export const editarVisitas = async (req, res) => {
   const { id } = req.params
   const { visitas } = req.body
 
-  // CAMBIO: El número de visitas debe ser entre 0 y 4.
   if (typeof visitas !== 'number' || visitas < 0 || visitas > 4) {
     return res
       .status(400)
@@ -181,7 +257,6 @@ export const editarVisitas = async (req, res) => {
       return res.status(404).json({ message: 'Tarjeta no encontrada.' })
     }
 
-    // CAMBIO: La condición para reducir visitas es ahora sobre 4
     if (tarjetaActual.canje_disponible === 1 && visitas < 4) {
       return res.status(400).json({
         message:
@@ -191,7 +266,6 @@ export const editarVisitas = async (req, res) => {
 
     const stmts = []
     const visitasAnteriores = tarjetaActual.visitas_acumuladas
-    // CAMBIO: El canje se activa cuando las visitas son igual a 4
     const canjeDisponible = visitas === 4 ? 1 : 0
 
     let sqlUpdate =
@@ -280,6 +354,32 @@ export const canjearTarjeta = async (req, res) => {
       .json({ message: 'Premio canjeado y tarjeta reiniciada exitosamente.' })
   } catch (error) {
     console.error('Error al canjear tarjeta:', error)
+    return res.status(500).json({ message: 'Error interno del servidor.' })
+  }
+}
+
+export const deleteTarjeta = async (req, res) => {
+  const { id } = req.params
+  try {
+    const db = await getDb()
+    if (!db)
+      return res.status(503).json({ message: 'Base de datos no disponible.' })
+
+    const stmts = [
+      { sql: 'DELETE FROM VisitasFidelidad WHERE id_tarjeta = ?', args: [id] },
+      { sql: 'DELETE FROM TarjetasFidelidad WHERE id = ?', args: [id] }
+    ]
+
+    const results = await db.batch(stmts, 'write')
+    const rowsAffected = results[1].rowsAffected
+
+    if (rowsAffected === 0) {
+      return res.status(404).json({ message: 'Tarjeta no encontrada.' })
+    }
+
+    return res.status(200).json({ message: 'Tarjeta eliminada exitosamente.' })
+  } catch (error) {
+    console.error('Error al eliminar tarjeta:', error)
     return res.status(500).json({ message: 'Error interno del servidor.' })
   }
 }
