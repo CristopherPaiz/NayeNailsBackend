@@ -1,8 +1,8 @@
 import express from 'express'
-import { registrarVisita } from '../controllers/visitas.controller.js'
+import { registrarEvento } from '../controllers/visitas.controller.js'
 
 const visitasRoutes = express.Router()
 
-visitasRoutes.post('/registrar', registrarVisita)
+visitasRoutes.post('/track', registrarEvento)
 
 export default visitasRoutes

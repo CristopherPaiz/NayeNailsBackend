@@ -12,6 +12,7 @@ import siteUploadsRoutes from './routes/siteUploads.routes.js'
 import fidelidadRoutes from './routes/fidelidad.routes.js'
 import textosColoresRoutes from './routes/textosColores.routes.js'
 import citasRoutes from './routes/citas.routes.js'
+import analyticsRoutes from './routes/analytics.routes.js'
 import dotenv from 'dotenv'
 import { getDb } from './database/connection.js'
 import {
@@ -100,6 +101,7 @@ app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/site-uploads', siteUploadsRoutes)
 app.use('/api/citas', citasRoutes)
 app.use('/api/fidelidad', fidelidadRoutes)
+app.use('/api/analytics', analyticsRoutes)
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' })
